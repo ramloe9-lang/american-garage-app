@@ -1,0 +1,96 @@
+@import "tailwindcss";
+
+/* Tokens de marca: negro carbón, acero, fuego y oro industrial. */
+@theme {
+  --color-carbon: #14110f;
+  --color-asfalto: #1e1b19;
+  --color-acero: #2d2926;
+  --color-fuego: #ff3b2f;
+  --color-oro: #f5b800;
+  --color-hueso: #f2eee7;
+  --color-ceniza: #a39c93;
+
+  --font-display: "Big Shoulders Display", "Arial Narrow", sans-serif;
+  --font-body: "Barlow", system-ui, sans-serif;
+}
+
+@layer base {
+  html {
+    background: var(--color-carbon);
+    color: var(--color-hueso);
+    font-family: var(--font-body);
+    -webkit-tap-highlight-color: transparent;
+  }
+  body {
+    margin: 0;
+    min-height: 100dvh;
+    padding-top: env(safe-area-inset-top);
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* --- Identidad de garaje --- */
+/* Cinta de precaución: la franja industrial del header. */
+.cinta-peligro {
+  background: repeating-linear-gradient(
+    -45deg,
+    var(--color-oro) 0 12px,
+    var(--color-carbon) 12px 24px
+  );
+}
+
+/* Llama que parpadea: el único movimiento automático de la pantalla. */
+@keyframes llama {
+  0%, 100% { transform: scale(1, 1) rotate(-3deg); }
+  50% { transform: scale(1.06, 1.16) rotate(3deg); }
+}
+.llama {
+  display: inline-block;
+  transform-origin: 50% 90%;
+  animation: llama 1.4s ease-in-out infinite;
+  filter: drop-shadow(0 0 6px rgb(255 59 47 / 0.7));
+}
+
+.scrollbar-oculta { scrollbar-width: none; }
+.scrollbar-oculta::-webkit-scrollbar { display: none; }
+
+/* Lluvia del banner en clima fresco. */
+@keyframes lluvia {
+  from { transform: translateY(-30px); opacity: 0; }
+  15% { opacity: 0.55; }
+  to { transform: translateY(170px); opacity: 0; }
+}
+.gota {
+  position: absolute;
+  top: 0;
+  width: 1.5px;
+  height: 16px;
+  border-radius: 1px;
+  background: linear-gradient(to bottom, transparent, rgb(170 200 230 / 0.75));
+  animation: lluvia 1.3s linear infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .gota { display: none; }
+}
+
+/* Esqueleto de carga: brillo que recorre los bloques. */
+@keyframes brillo {
+  from { background-position: 200% 0; }
+  to { background-position: -200% 0; }
+}
+.esqueleto {
+  background: linear-gradient(100deg, var(--color-acero) 30%, #3b3632 50%, var(--color-acero) 70%);
+  background-size: 200% 100%;
+  animation: brillo 1.6s linear infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .esqueleto { animation: none; }
+}

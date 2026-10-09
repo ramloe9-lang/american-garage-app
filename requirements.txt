@@ -1,0 +1,10 @@
+fastapi>=0.110,<1.0
+uvicorn[standard]>=0.29
+gunicorn>=22.0
+pydantic>=2.6
+pydantic-settings>=2.2
+pandas>=2.1
+requests>=2.31
+# gspread 5.x es la última rama que acepta credenciales oauth2client.
+gspread==5.12.4
+oauth2client==4.1.3
