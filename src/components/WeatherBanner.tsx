@@ -52,6 +52,8 @@ export default function WeatherBanner({ clima, filtroActivo, onToggle }: Props) 
     ? clima.descripcion.charAt(0).toUpperCase() + clima.descripcion.slice(1)
     : ''
 
+  const tempRedondeada = Math.round(clima.temperatura)
+
   return (
     <motion.section
       aria-label="Clima de hoy"
@@ -86,40 +88,11 @@ export default function WeatherBanner({ clima, filtroActivo, onToggle }: Props) 
           </div>
           <p
             className="font-display text-5xl font-black leading-none"
-            aria-label={`${Math.round(clima.temperatura)} grados`}
+            aria-label={`${tempRedondeada} grados`}
           >
-            {Math.round(clima.temperatura)}°
+            {tempRedondeada}°
           </p>
         </div>
-
-        {descripcion && (
-          <p className="mt-2 text-xs text-hueso/70">
-            {descripcion} en {clima.ciudad}
-          </p>
-        )}
-
-        {tema.chip && (
-          <motion.button
-            type="button"
-            aria-pressed={filtroActivo}
-            onClick={onToggle}
-            whileTap={{ scale: 0.96 }}
-            className={`mt-4 inline-flex items-center rounded-full px-4 py-2.5 font-display text-xl font-bold leading-none outline-offset-2 focus-visible:outline-2 focus-visible:outline-oro ${
-              filtroActivo
-                ? 'bg-hueso text-carbon'
-                : 'bg-carbon/70 text-hueso ring-1 ring-inset ring-hueso/40'
-            }`}
-          >
-            <motion.span
-              key={filtroActivo ? 'activo' : 'inactivo'}
-              initial={{ opacity: 0, y: 6 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.18 }}
-            >
-              {filtroActivo ? '✓ Mostrando lo ideal · Ver todo' : tema.chip}
-            </motion.span>
-          </motion.button>
-        )}
       </div>
     </motion.section>
   )
