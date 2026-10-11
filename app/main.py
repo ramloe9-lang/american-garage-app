@@ -25,6 +25,7 @@ app.add_middleware(
     allow_origins=[o.strip() for o in settings.cors_origins.split(",") if o.strip()],
     allow_methods=["GET"],
     allow_headers=["*"],
+    expose_headers=["X-Temperatura", "X-Clima-Modo"],
 )
 
 
