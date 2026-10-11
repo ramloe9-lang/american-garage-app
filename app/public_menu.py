@@ -1,7 +1,25 @@
 import inspect
+import json
+import urllib.request
 from typing import Any, Callable
 from fastapi import APIRouter, Response
 from starlette.concurrency import run_in_threadpool
+
+
+def obtener_clima_en_tiempo_real_backend():
+    """Consulta directamente el clima actual de Querétaro en tiempo real."""
+    try:
+        url = "https://wttr.in/Queretaro?format=j1"
+        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+        with urllib.request.urlopen(req, timeout=3) as response:
+            data = json.loads(response.read().decode())
+            current = data.get("current_condition", [{}])[0]
+            temp = float(current.get("temp_C", 16.0))
+            desc_arr = current.get("weatherDesc", [{}])
+            desc = desc_arr[0].get("value", "Fresco") if desc_arr else "Fresco"
+            return temp, desc
+    except Exception:
+        return 16.0, "Fresco"
 
 
 def crear_router_publico(obtener_menu_completo_func: Callable[..., Any]):
@@ -9,7 +27,7 @@ def crear_router_publico(obtener_menu_completo_func: Callable[..., Any]):
 
     @router.get("/public")
     async def obtener_menu_publico(response: Response):
-        # Capturamos la respuesta del menú completo y las cabeceras del clima real
+        # 1. Obtenemos el menú ejecutando la función original
         internal_response = Response()
         sig = inspect.signature(obtener_menu_completo_func)
         kwargs = {"response": internal_response} if "response" in sig.parameters else {}
@@ -21,19 +39,21 @@ def crear_router_publico(obtener_menu_completo_func: Callable[..., Any]):
             if hasattr(res, "__await__"):
                 res = await res
 
-        # Obtenemos la temperatura real de la API y le restamos 2 de una vez por todas
-        temp_val = internal_response.headers.get("X-Temperatura", "16")
-        modo_val = internal_response.headers.get("X-Clima-Modo", "frio")
+        # 2. Consultamos la temperatura real de la API en vivo
+        temp_base, desc_clima = await run_in_threadpool(obtener_clima_en_tiempo_real_backend)
 
-        try:
-            temperatura_base = float(temp_val)
-        except (ValueError, TypeError):
-            temperatura_base = 16.0
+        # Aplicamos la única resta oficial de 2 grados
+        temperatura_final = temp_base - 2.0
 
-        # Única resta oficial de 2 grados
-        temperatura_final = temperatura_base - 2.0
+        # Determinamos el modo automáticamente según la temperatura compensada
+        if temperatura_final < 18:
+            modo_val = "frio"
+        elif temperatura_final > 25:
+            modo_val = "calor"
+        else:
+            modo_val = "templado"
 
-        # Campos privados a excluir de los productos
+        # 3. Limpiamos los campos privados de los productos del menú
         campos_privados = {
             "precio_costo",
             "costo",
@@ -64,7 +84,7 @@ def crear_router_publico(obtener_menu_completo_func: Callable[..., Any]):
                     or data.get("temperatura")
                 )
 
-                temp_str = str(temp_raw).strip().lower() if temp_raw is not None else {}
+                temp_str = str(temp_raw).strip().lower() if temp_raw is not None else ""
 
                 if temp_str not in ["", "none", "null", "undefined"]:
                     valor_final = temp_str
@@ -90,6 +110,7 @@ def crear_router_publico(obtener_menu_completo_func: Callable[..., Any]):
 
         response.headers["Cache-Control"] = "public, max-age=60"
 
+        # 4. Retornamos el JSON con el clima real consultado y el menú completo
         return {
             "clima": {
                 "ciudad": "Querétaro",
