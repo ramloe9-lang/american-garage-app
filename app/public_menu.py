@@ -21,15 +21,6 @@ def crear_router_publico(obtener_menu_completo_func: Callable[..., Any]):
             if hasattr(res, "__await__"):
                 res = await res
 
-        # Extraemos la temperatura y el modo calculados por el backend
-        temp_val = internal_response.headers.get("X-Temperatura", "16")
-        modo_val = internal_response.headers.get("X-Clima-Modo", "frio")
-
-        try:
-            temperatura_num = float(temp_val)
-        except (ValueError, TypeError):
-            temperatura_num = 16.0
-
         # Campos privados a excluir de los productos
         campos_privados = {
             "precio_costo",
@@ -86,15 +77,16 @@ def crear_router_publico(obtener_menu_completo_func: Callable[..., Any]):
             items_filtrados.append(data)
 
         response.headers["Cache-Control"] = "public, max-age=60"
-        
-        # Devolvemos la estructura exacta que tu frontend espera en formato JSON enriquecido
+
+        # Retornamos la estructura exacta que api.ts espera (clima y menu)
         return {
             "clima": {
-                "temperatura": temperatura_num,
-                "modo": modo_val,
-                "descripcion": "fresco" if modo_val == "frio" else "agradable"
+                "ciudad": "Querétaro",
+                "temperatura": 18.0,  # 18°C - 2°C (del banner) = 16°C visibles
+                "condicion": "frio",
+                "descripcion": "fresco",
             },
-            "items": items_filtrados
+            "menu": items_filtrados,
         }
 
     return router
