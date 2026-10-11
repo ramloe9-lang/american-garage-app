@@ -9,7 +9,7 @@ def crear_router_publico(obtener_menu_completo_func: Callable[..., Any]):
 
     @router.get("/public")
     async def obtener_menu_publico(response: Response):
-        # Creamos una respuesta interna para capturar las cabeceras de main.py
+        # Capturamos la respuesta del menú completo
         internal_response = Response()
         sig = inspect.signature(obtener_menu_completo_func)
         kwargs = {"response": internal_response} if "response" in sig.parameters else {}
@@ -21,11 +21,14 @@ def crear_router_publico(obtener_menu_completo_func: Callable[..., Any]):
             if hasattr(res, "__await__"):
                 res = await res
 
-        # Reenviamos las cabeceras de clima hacia el navegador (frontend)
-        if "X-Temperatura" in internal_response.headers:
-            response.headers["X-Temperatura"] = internal_response.headers["X-Temperatura"]
-        if "X-Clima-Modo" in internal_response.headers:
-            response.headers["X-Clima-Modo"] = internal_response.headers["X-Clima-Modo"]
+        # Extraemos la temperatura y el modo calculados por el backend
+        temp_val = internal_response.headers.get("X-Temperatura", "16")
+        modo_val = internal_response.headers.get("X-Clima-Modo", "frio")
+
+        try:
+            temperatura_num = float(temp_val)
+        except (ValueError, TypeError):
+            temperatura_num = 16.0
 
         # Campos privados a excluir de los productos
         campos_privados = {
@@ -83,6 +86,15 @@ def crear_router_publico(obtener_menu_completo_func: Callable[..., Any]):
             items_filtrados.append(data)
 
         response.headers["Cache-Control"] = "public, max-age=60"
-        return items_filtrados
+        
+        # Devolvemos la estructura exacta que tu frontend espera en formato JSON enriquecido
+        return {
+            "clima": {
+                "temperatura": temperatura_num,
+                "modo": modo_val,
+                "descripcion": "fresco" if modo_val == "frio" else "agradable"
+            },
+            "items": items_filtrados
+        }
 
     return router
