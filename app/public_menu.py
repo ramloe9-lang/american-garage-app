@@ -78,13 +78,14 @@ def crear_router_publico(obtener_menu_completo_func: Callable[..., Any]):
 
         response.headers["Cache-Control"] = "public, max-age=60"
 
-        # Retornamos la estructura exacta que api.ts espera (clima y menu)
+        # Retornamos estructura completa compatible con React y api.ts
         return {
             "clima": {
                 "ciudad": "Querétaro",
                 "temperatura": 18.0,  # 18°C - 2°C (del banner) = 16°C visibles
+                "modo": "frio",
                 "condicion": "frio",
-                "descripcion": "fresco",
+                "descripcion": "Día fresco en Querétaro",
             },
             "menu": items_filtrados,
         }
