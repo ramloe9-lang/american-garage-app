@@ -61,6 +61,20 @@ def obtener_menu(response: Response, categoria: str | None = None) -> list[ItemM
     except Exception:  # defensa final: el clima nunca debe tumbar el menú
         logger.exception("Error inesperado consultando el clima; se omite la Regla D")
         temperatura = None
+
+    # --- Determinar el modo de clima según los umbrales de temperatura ---
+    modo_clima = "templado"
+    if temperatura is not None:
+        if temperatura < 18.0:
+            modo_clima = "frio"
+        elif temperatura > 25.0:
+            modo_clima = "calor"
+
+    # Inyectamos los datos del clima en los headers HTTP para que el frontend los lea
+    response.headers["X-Temperatura"] = str(temperatura) if temperatura is not None else "16"
+    response.headers["X-Clima-Modo"] = modo_clima
+    # -------------------------------------------------------------------
+
     try:
         items = construir_menu(tablas, temperatura)
     except Exception:
