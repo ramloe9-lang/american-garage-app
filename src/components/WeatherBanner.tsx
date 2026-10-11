@@ -94,6 +94,25 @@ export default function WeatherBanner({ clima, filtroActivo, onToggle }: Props) 
             {tempRedondeada}°
           </p>
         </div>
+
+        {/* Botón interactivo de especiales del clima */}
+        {clima.modo !== 'templado' && (
+          <div className="mt-3.5 flex flex-col gap-1.5 border-t border-white/10 pt-3">
+            {descripcion && <p className="text-xs text-hueso/70">{descripcion}</p>}
+            <button
+              onClick={onToggle}
+              type="button"
+              className={`inline-flex items-center gap-2 self-start rounded-full px-4 py-2 font-display text-sm font-bold tracking-wide transition-all ${
+                filtroActivo
+                  ? 'bg-oro text-negro ring-2 ring-white shadow-lg scale-105'
+                  : 'bg-white/15 text-hueso hover:bg-white/25 ring-1 ring-white/20'
+              }`}
+            >
+              <span>{tema.icono}</span>
+              <span>{filtroActivo ? 'Ver todo el menú' : 'Ver especiales de clima'}</span>
+            </button>
+          </div>
+        )}
       </div>
     </motion.section>
   )
