@@ -52,7 +52,8 @@ export default function WeatherBanner({ clima, filtroActivo, onToggle }: Props) 
     ? clima.descripcion.charAt(0).toUpperCase() + clima.descripcion.slice(1)
     : ''
 
-  const tempRedondeada = Math.round(clima.temperatura)
+  // Restamos 2 grados a la temperatura que viene de la API y redondeamos
+  const tempRedondeada = Math.round(clima.temperatura - 2)
 
   return (
     <motion.section
