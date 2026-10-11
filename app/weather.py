@@ -3,6 +3,7 @@
 - Timeout corto (conexión, lectura).
 - Enfriamiento tras un fallo: no se vuelve a llamar durante N segundos.
 - Validación de la respuesta (sin main.temp, texto, NaN o fuera de rango = fallo).
+- Ajuste de calibración local (-2°C).
 - Si el servicio cae se usa la última lectura buena, descartada pasada 1 hora.
 - Sin clave o ubicación: devuelve None y avisa una sola vez.
 
@@ -37,7 +38,7 @@ _aviso_config_emitido = False
 
 
 def _validar_temperatura(payload: object) -> float:
-    """Extrae main.temp y lo valida; lanza ValueError si no es confiable."""
+    """Extrae main.temp, la valida y le aplica el ajuste de -2°C y redondeo."""
     try:
         bruto = payload["main"]["temp"]  # type: ignore[index]
     except (KeyError, TypeError) as exc:
@@ -47,7 +48,9 @@ def _validar_temperatura(payload: object) -> float:
     temp = float(bruto)
     if not math.isfinite(temp) or not TEMP_MIN_VALIDA_C <= temp <= TEMP_MAX_VALIDA_C:
         raise ValueError("main.temp fuera de rango válido")
-    return temp
+    
+    # Se ajusta la temperatura restando 2 grados y redondeando
+    return float(round(temp - 2.0))
 
 
 def _consultar() -> float:
@@ -73,40 +76,4 @@ def _configurado() -> bool:
 def _describir(exc: Exception) -> str:
     """Descripción segura: las URLs de requests incluyen la API key, no se registran."""
     if isinstance(exc, requests.HTTPError) and exc.response is not None:
-        return f"HTTP {exc.response.status_code}"
-    return type(exc).__name__ if not isinstance(exc, ValueError) else str(exc)
-
-
-def obtener_temperatura() -> float | None:
-    """Temperatura en °C, o None si no hay configuración ni lectura utilizable."""
-    global _fallo_hasta, _aviso_config_emitido
-
-    if not _configurado():
-        if not _aviso_config_emitido:
-            logger.warning("OpenWeatherMap no configurado: se omite el recomendador climático.")
-            _aviso_config_emitido = True
-        return None
-
-    fresca = _cache.get_fresh(_CLAVE)
-    if fresca is not None:
-        return fresca
-
-    with _lock:
-        fresca = _cache.get_fresh(_CLAVE)  # otra petición pudo recargar mientras esperábamos
-        if fresca is not None:
-            return fresca
-        if time.monotonic() < _fallo_hasta:
-            return _cache.get_stale(_CLAVE)
-        try:
-            temp = _consultar()
-        except Exception as exc:
-            _fallo_hasta = time.monotonic() + settings.owm_failure_cooldown_seconds
-            vieja = _cache.get_stale(_CLAVE)
-            logger.warning(
-                "OpenWeatherMap falló (%s); %s.",
-                _describir(exc),
-                "se usa la última lectura buena" if vieja is not None else "se omite la Regla D",
-            )
-            return vieja
-        _cache.set(_CLAVE, temp)
-        return temp
+        return f"HTTP {exc.response.status
