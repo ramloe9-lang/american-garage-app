@@ -9,7 +9,7 @@ def crear_router_publico(obtener_menu_completo_func: Callable[..., Any]):
 
     @router.get("/public")
     async def obtener_menu_publico(response: Response):
-        # Capturamos la respuesta del menú completo
+        # Capturamos la respuesta del menú completo y las cabeceras del clima real
         internal_response = Response()
         sig = inspect.signature(obtener_menu_completo_func)
         kwargs = {"response": internal_response} if "response" in sig.parameters else {}
@@ -20,6 +20,18 @@ def crear_router_publico(obtener_menu_completo_func: Callable[..., Any]):
             res = await run_in_threadpool(obtener_menu_completo_func, **kwargs)
             if hasattr(res, "__await__"):
                 res = await res
+
+        # Obtenemos la temperatura real de la API y le restamos 2 de una vez por todas
+        temp_val = internal_response.headers.get("X-Temperatura", "16")
+        modo_val = internal_response.headers.get("X-Clima-Modo", "frio")
+
+        try:
+            temperatura_base = float(temp_val)
+        except (ValueError, TypeError):
+            temperatura_base = 16.0
+
+        # Única resta oficial de 2 grados
+        temperatura_final = temperatura_base - 2.0
 
         # Campos privados a excluir de los productos
         campos_privados = {
@@ -52,7 +64,7 @@ def crear_router_publico(obtener_menu_completo_func: Callable[..., Any]):
                     or data.get("temperatura")
                 )
 
-                temp_str = str(temp_raw).strip().lower() if temp_raw is not None else ""
+                temp_str = str(temp_raw).strip().lower() if temp_raw is not None else {}
 
                 if temp_str not in ["", "none", "null", "undefined"]:
                     valor_final = temp_str
@@ -78,14 +90,13 @@ def crear_router_publico(obtener_menu_completo_func: Callable[..., Any]):
 
         response.headers["Cache-Control"] = "public, max-age=60"
 
-        # Retornamos estructura completa compatible con React y api.ts
         return {
             "clima": {
                 "ciudad": "Querétaro",
-                "temperatura": 18.0,  # 18°C - 2°C (del banner) = 16°C visibles
-                "modo": "frio",
-                "condicion": "frio",
-                "descripcion": "Día fresco en Querétaro",
+                "temperatura": temperatura_final,
+                "modo": modo_val,
+                "condicion": modo_val,
+                "descripcion": f"Día {modo_val} en Querétaro",
             },
             "menu": items_filtrados,
         }
