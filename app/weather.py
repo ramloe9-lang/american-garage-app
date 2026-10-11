@@ -76,4 +76,40 @@ def _configurado() -> bool:
 def _describir(exc: Exception) -> str:
     """Descripción segura: las URLs de requests incluyen la API key, no se registran."""
     if isinstance(exc, requests.HTTPError) and exc.response is not None:
-        return f"HTTP {exc.response.status
+        return f"HTTP {exc.response.status_code}"
+    return type(exc).__name__ if not isinstance(exc, ValueError) else str(exc)
+
+
+def obtener_temperatura() -> float | None:
+    """Temperatura en °C, o None si no hay configuración ni lectura utilizable."""
+    global _fallo_hasta, _aviso_config_emitido
+
+    if not _configurado():
+        if not _aviso_config_emitido:
+            logger.warning("OpenWeatherMap no configurado: se omite el recomendador climático.")
+            _aviso_config_emitido = True
+        return None
+
+    fresca = _cache.get_fresh(_CLAVE)
+    if fresca is not None:
+        return fresca
+
+    with _lock:
+        fresca = _cache.get_fresh(_CLAVE)  # otra petición pudo recargar mientras esperábamos
+        if fresca is not None:
+            return fresca
+        if time.monotonic() < _fallo_hasta:
+            return _cache.get_stale(_CLAVE)
+        try:
+            temp = _consultar()
+        except Exception as exc:
+            _fallo_hasta = time.monotonic() + settings.owm_failure_cooldown_seconds
+            vieja = _cache.get_stale(_CLAVE)
+            logger.warning(
+                "OpenWeatherMap falló (%s); %s.",
+                _describir(exc),
+                "se usa la última lectura buena" if vieja is not None else "se omite la Regla D",
+            )
+            return vieja
+        _cache.set(_CLAVE, temp)
+        return temp
