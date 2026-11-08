@@ -31,7 +31,7 @@ export function BotonLlamarMesero() {
     const mensaje = `🔔 *LLAMADA DE ASISTENCIA - MESA ${mesa}* 🔔\n\nEl cliente de la Mesa ${mesa} solicita la presencia de un mesero en la mesa. ¡Por favor atender!`;
 
     // ⚠️ REEMPLAZA ESTE NÚMERO con el teléfono real del restaurante o del mesero encargado
-    const telefonoRestaurante = "5215512345678"; 
+    const telefonoRestaurante = "524425568390"; 
 
     const urlWhatsapp = `https://wa.me/${telefonoRestaurante}?text=${encodeURIComponent(mensaje)}`;
     window.open(urlWhatsapp, '_blank');
