@@ -60,6 +60,7 @@ class Producto:
     temperatura: str
     ingredientes: list[str] = field(default_factory=list)
     estado_stock: str = ""
+    imagen: str | None = None
 
 
 class IndiceInsumos:
@@ -127,6 +128,7 @@ def cargar_productos(tablas: dict[str, pd.DataFrame]) -> list[Producto]:
             precio=a_float(r.get("Precio_Venta")), costo=a_float(r.get("Costo_Estimado")),
             temperatura=_temperatura_ideal(r),
             ingredientes=separar_referencias(r.get("Ingredientes_Clave", "")),
+            imagen=str(r.get("Imagen") or r.get("imagen") or r.get("imagenUrl") or "").strip() or None,
         ))
 
     for r in tablas["Inventario_Bebidas"].to_dict("records"):
@@ -139,16 +141,13 @@ def cargar_productos(tablas: dict[str, pd.DataFrame]) -> list[Producto]:
             precio=a_float(r.get("Precio_Venta")), costo=a_float(r.get("Precio_Costo")),
             temperatura=_temperatura_ideal(r),
             estado_stock=normalizar(r.get("Estado_Stock", "")),
+            imagen=str(r.get("Imagen") or r.get("imagen") or r.get("imagenUrl") or "").strip() or None,
         ))
     return productos
 
 
 def recalcular_costo(producto: Producto, insumos: list[Insumo], total_ingredientes: int = 0) -> float:
-    """Costo real del platillo tras alzas de insumos clave.
-
-    El costo se reparte entre TODOS los ingredientes listados; los que no existen en
-    el inventario cuentan sin cambio de costo (no inflan la cuota de los demás).
-    """
+    """Costo real del platillo tras alzas de insumos clave."""
     if not insumos or producto.costo <= 0:
         return producto.costo
     n = max(total_ingredientes, len(insumos))
@@ -174,7 +173,7 @@ def evaluar_producto(p: Producto, indice: IndiceInsumos, temp_c: float | None) -
     insignias: list[str] = []
     descuento = 0.0
 
-    # Regla B: urgencia de caducidad (solo insumos que vencen hoy)
+    # Regla B: urgencia de caducidad
     urgentes = [i for i in insumos if i.estado == ESTADO_URGENTE]
     if urgentes:
         score += BONO_URGENTE
@@ -184,15 +183,11 @@ def evaluar_producto(p: Producto, indice: IndiceInsumos, temp_c: float | None) -
     # Regla C: Margin Guard
     if any(i.estado == ESTADO_COSTO_ELEVADO for i in insumos) and p.precio > 0 and p.costo > 0:
         costo_real = recalcular_costo(p, insumos, len(p.ingredientes))
-        # Redondeo: 50 * 1.1 = 55.00000000000001 y un margen de exactamente 45% se penalizaba
         margen = round((p.precio - costo_real) / p.precio, 4)
         if margen < MARGEN_MINIMO:
             score -= PENALIZACION_MARGEN
 
     # Regla D: clima estricto
-    #   < 18 °C  => solo "caliente" recibe insignia de frío
-    #   > 25 °C  => solo frío/fresco/helado/calor recibe insignia de calor
-    #   18-25 °C => ningún producto recibe insignia de clima
     temp_norm = _sin_acentos(p.temperatura)
     if temp_c is not None:
         if temp_c < TEMP_FRIA_C:
@@ -215,11 +210,12 @@ def evaluar_producto(p: Producto, indice: IndiceInsumos, temp_c: float | None) -
         insignias=insignias,
         prioridad_score=max(0, min(100, score)),
         temperatura_ideal=p.temperatura,
+        imagenUrl=p.imagen,
     )
 
 
 def construir_menu(tablas: dict[str, pd.DataFrame], temp_c: float | None) -> list[ItemMenu]:
-    """Menú final ordenado. Un producto roto se omite sin tumbar el menú completo."""
+    """Menú final ordenado."""
     indice = IndiceInsumos(tablas["Inventario_Insumos_Mermas"])
     items: list[ItemMenu] = []
     for p in cargar_productos(tablas):
