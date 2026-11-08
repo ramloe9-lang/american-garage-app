@@ -15,13 +15,13 @@ settings = get_settings()
 
 SCOPES = ["https://www.googleapis.com/auth/spreadsheets.readonly"]
 
-# Relajamos las columnas requeridas para evitar bloqueos por nombres exactos o acentos
+# Columnas mínimas (dejadas flexibles para evitar bloqueos)
 COLUMNAS_REQUERIDAS: dict[str, list[str]] = {
     "Inventario_Bebidas": [],
     "Menu_Productos": [],
     "Inventario_Insumos_Mermas": [],
     "Registro_Ventas": [],
-    "Dashboard_Resumen": [],  # se lee por posición (los encabezados llevan espacios y '/')
+    "Dashboard_Resumen": [],  
 }
 
 
@@ -50,7 +50,7 @@ def _crear_cliente() -> gspread.Client:
         return gspread.authorize(creds)
     except SheetsError:
         raise
-    except Exception as exc:  # credenciales corruptas, archivo ausente, etc.
+    except Exception as exc:
         raise SheetsError(f"No se pudo autenticar con Google: {exc}") from exc
 
 
@@ -78,7 +78,7 @@ def _a_dataframe(valores: list[list[str]]) -> pd.DataFrame:
             drop=True
         )
 
-    # Normalizar alias comunes de columnas (Temperatura, Imagen y Descripción) de forma tolerante
+    # Normalizar alias comunes de columnas (Temperatura, Imagen y Descripción)
     mapeo_columnas = {}
     for col in df.columns:
         col_clean = col.strip().lower().replace(" ", "_")
@@ -92,29 +92,27 @@ def _a_dataframe(valores: list[list[str]]) -> pd.DataFrame:
     if mapeo_columnas:
         df = df.rename(columns=mapeo_columnas)
 
-    # Garantizar que los valores de Temperatura_Ideal estén en minúsculas y limpios
+    # Limpieza segura columna por columna asegurando que sean Series
     if "Temperatura_Ideal" in df.columns:
-        df["Temperatura_Ideal"] = (
-            df["Temperatura_Ideal"].astype(str).str.strip().str.lower()
-        )
-        
-    # Garantizar que imagenUrl exista y limpie correctamente los espacios o nulos
-    if "imagenUrl" not in df.columns:
-        df["imagenUrl"] = None
+        df["Temperatura_Ideal"] = df["Temperatura_Ideal"].astype(str).str.strip().str.lower()
     else:
+        df["Temperatura_Ideal"] = "indiferente"
+
+    if "imagenUrl" in df.columns:
         df["imagenUrl"] = df["imagenUrl"].astype(str).str.strip()
         df["imagenUrl"] = df["imagenUrl"].apply(
             lambda x: None if x in ["", "none", "null", "nan", "undefined", "nat"] else x
         )
-
-    # Garantizar que descripcion exista y limpie correctamente los espacios o nulos
-    if "descripcion" not in df.columns:
-        df["descripcion"] = None
     else:
+        df["imagenUrl"] = None
+
+    if "descripcion" in df.columns:
         df["descripcion"] = df["descripcion"].astype(str).str.strip()
         df["descripcion"] = df["descripcion"].apply(
             lambda x: None if x in ["", "none", "null", "nan", "undefined", "nat"] else x
         )
+    else:
+        df["descripcion"] = None
 
     return df
 
@@ -133,7 +131,7 @@ def _descargar() -> dict[str, pd.DataFrame]:
         tablas: dict[str, pd.DataFrame] = {}
         for nombre in COLUMNAS_REQUERIDAS.keys():
             if nombre not in hojas:
-                continue # Salta si alguna pestaña auxiliar no existe
+                continue
             df = _a_dataframe(hojas[nombre].get_all_values())
             tablas[nombre] = df
         return tablas
@@ -149,7 +147,7 @@ def obtener_tablas() -> dict[str, pd.DataFrame]:
 
 
 def obtener_dashboard() -> list[dict[str, str]]:
-    """KPIs de 'Dashboard_Resumen' (columnas leídas por posición: métrica, valor, nota)."""
+    """KPIs de 'Dashboard_Resumen'."""
     df = obtener_tablas().get("Dashboard_Resumen")
     if df is None or df.empty:
         return []
