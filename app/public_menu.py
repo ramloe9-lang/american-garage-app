@@ -79,15 +79,25 @@ def crear_router_publico(obtener_menu_completo_func: Callable[..., Any]):
                     data["imagenUrl"] = None
 
                 # --- EXTRACCIÓN BLINDADA DE LA DESCRIPCIÓN ---
-                desc_val = (
-                    data.get("descripcion")
-                    or data.get("Descripcion")
-                    or data.get("Descripción")
-                    or data.get("descripcion_larga")
-                    or data.get("detalles")
-                )
+                desc_val = None
+                if isinstance(data, dict):
+                    desc_val = (
+                        data.get("descripcion")
+                        or data.get("Descripcion")
+                        or data.get("Descripción")
+                        or data.get("descripcion_larga")
+                        or data.get("detalles")
+                    )
+                
+                if not desc_val and hasattr(item, "__dict__"):
+                    item_dict = item.__dict__
+                    desc_val = (
+                        item_dict.get("descripcion")
+                        or item_dict.get("Descripcion")
+                        or item_dict.get("Descripción")
+                    )
 
-                if desc_val and str(desc_val).strip() not in ["", "none", "null", "undefined"]:
+                if desc_val and str(desc_val).strip() not in ["", "none", "null", "undefined", "nan"]:
                     data["descripcion"] = str(desc_val).strip()
                 else:
                     data["descripcion"] = None
