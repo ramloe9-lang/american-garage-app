@@ -4,6 +4,7 @@ import { useMesa } from '../hooks/useMesa';
 interface Producto {
   id: string | number;
   nombre: string;
+  precio?: number;
   precio_final?: number;
   precio_original?: number;
   [key: string]: any;
@@ -21,6 +22,11 @@ interface ItemCarrito {
 interface BotonOrdenarHeaderProps {
   productosDisponibles?: Producto[];
 }
+
+// Función auxiliar robusta para extraer el precio sin importar cómo venga de la API
+const obtenerPrecio = (prod: Producto): number => {
+  return Number(prod.precio_final ?? prod.precio_original ?? prod.precio ?? 0);
+};
 
 export function BotonOrdenarHeader({ productosDisponibles = [] }: BotonOrdenarHeaderProps) {
   const mesa = useMesa();
@@ -51,7 +57,7 @@ export function BotonOrdenarHeader({ productosDisponibles = [] }: BotonOrdenarHe
   const agregarAlCarrito = () => {
     if (!productoSeleccionado) return;
 
-    const precioUnitario = productoSeleccionado.precio_final ?? productoSeleccionado.precio_original ?? 0;
+    const precioUnitario = obtenerPrecio(productoSeleccionado);
 
     const nuevoItem: ItemCarrito = {
       id: productoSeleccionado.id,
@@ -75,7 +81,7 @@ export function BotonOrdenarHeader({ productosDisponibles = [] }: BotonOrdenarHe
 
   const enviarOrden = () => {
     if (carrito.length === 0) return;
-    alert(`¡Orden enviada con éxito para la Mesa ${mesa}! Total: $${totalGeneral}. En breve la cocina comenzará a prepararla.`);
+    alert(`¡Orden enviada con éxito para la Mesa ${mesa}! Total: $${totalGeneral.toFixed(2)}. En breve la cocina comenzará a prepararla.`);
     setCarrito([]);
     localStorage.removeItem('carrito_pedidos');
     setMostrarResumen(false);
@@ -126,23 +132,26 @@ export function BotonOrdenarHeader({ productosDisponibles = [] }: BotonOrdenarHe
             
             <div className="space-y-2.5 overflow-y-auto pr-1 flex-1 mb-4">
               {productosDisponibles && productosDisponibles.length > 0 ? (
-                productosDisponibles.map((prod: Producto) => (
-                  <div 
-                    key={prod.id}
-                    onClick={() => abrirPersonalizacion(prod)}
-                    className="bg-neutral-800/60 hover:bg-neutral-800 border border-neutral-700/50 p-3 rounded-xl cursor-pointer flex justify-between items-center transition-colors"
-                  >
-                    <div>
-                      <p className="font-semibold text-white text-sm">{prod.nombre}</p>
-                      <p className="text-xs text-yellow-400 font-bold mt-0.5">
-                        ${prod.precio_final ?? prod.precio_original ?? 0}
-                      </p>
+                productosDisponibles.map((prod: Producto) => {
+                  const precioProd = obtenerPrecio(prod);
+                  return (
+                    <div 
+                      key={prod.id}
+                      onClick={() => abrirPersonalizacion(prod)}
+                      className="bg-neutral-800/60 hover:bg-neutral-800 border border-neutral-700/50 p-3 rounded-xl cursor-pointer flex justify-between items-center transition-colors"
+                    >
+                      <div>
+                        <p className="font-semibold text-white text-sm">{prod.nombre}</p>
+                        <p className="text-xs text-yellow-400 font-bold mt-0.5">
+                          ${precioProd.toFixed(2)}
+                        </p>
+                      </div>
+                      <span className="text-xs bg-yellow-500 hover:bg-yellow-400 text-neutral-950 font-bold px-2.5 py-1 rounded-lg">
+                        + Agregar
+                      </span>
                     </div>
-                    <span className="text-xs bg-yellow-500 hover:bg-yellow-400 text-neutral-950 font-bold px-2.5 py-1 rounded-lg">
-                      + Agregar
-                    </span>
-                  </div>
-                ))
+                  );
+                })
               ) : (
                 <p className="text-neutral-400 text-center py-6 text-sm">No hay productos disponibles por el momento.</p>
               )}
@@ -154,7 +163,7 @@ export function BotonOrdenarHeader({ productosDisponibles = [] }: BotonOrdenarHe
                 onClick={() => setMostrarResumen(true)}
                 className="w-full bg-green-600 hover:bg-green-500 text-white font-bold py-3 rounded-xl text-sm transition-colors shadow-lg flex justify-between px-4 items-center"
               >
-                <span>Ver mi orden (${totalGeneral})</span>
+                <span>Ver mi orden (${totalGeneral.toFixed(2)})</span>
                 <span className="bg-white/20 px-2 py-0.5 rounded-full text-xs">{carrito.length} items</span>
               </button>
             )}
@@ -175,7 +184,7 @@ export function BotonOrdenarHeader({ productosDisponibles = [] }: BotonOrdenarHe
 
             <h3 className="text-base font-bold text-white mb-1">{productoSeleccionado.nombre}</h3>
             <p className="text-xs text-yellow-400 font-semibold mb-4">
-              Precio unitario: ${productoSeleccionado.precio_final ?? productoSeleccionado.precio_original ?? 0}
+              Precio unitario: ${obtenerPrecio(productoSeleccionado).toFixed(2)}
             </p>
 
             {/* Ajustar Cantidad */}
@@ -212,7 +221,7 @@ export function BotonOrdenarHeader({ productosDisponibles = [] }: BotonOrdenarHe
               onClick={agregarAlCarrito}
               className="w-full bg-yellow-500 hover:bg-yellow-400 text-neutral-950 font-bold py-2.5 rounded-xl text-sm transition-colors shadow-lg"
             >
-              Añadir a la orden (${(productoSeleccionado.precio_final ?? productoSeleccionado.precio_original ?? 0) * cantidad})
+              Añadir a la orden (${(obtenerPrecio(productoSeleccionado) * cantidad).toFixed(2)})
             </button>
           </div>
         </div>
@@ -240,7 +249,7 @@ export function BotonOrdenarHeader({ productosDisponibles = [] }: BotonOrdenarHe
                     {item.comentarios && (
                       <p className="text-xs text-neutral-400 italic mt-0.5">Nota: {item.comentarios}</p>
                     )}
-                    <p className="text-xs text-yellow-400 font-bold mt-1">${item.subtotal}</p>
+                    <p className="text-xs text-yellow-400 font-bold mt-1">${item.subtotal.toFixed(2)}</p>
                   </div>
                   <button 
                     onClick={() => eliminarDelCarrito(index)}
@@ -255,7 +264,7 @@ export function BotonOrdenarHeader({ productosDisponibles = [] }: BotonOrdenarHe
             <div className="border-t border-neutral-800 pt-3 mb-4">
               <div className="flex justify-between text-white font-bold text-base">
                 <span>Total a pagar:</span>
-                <span className="text-yellow-400">${totalGeneral}</span>
+                <span className="text-yellow-400">${totalGeneral.toFixed(2)}</span>
               </div>
             </div>
 
