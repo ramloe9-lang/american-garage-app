@@ -5,6 +5,7 @@ export const GRUPOS: { id: GrupoId; label: string; emoji: string }[] = [
   { id: 'alitas', label: 'Alitas', emoji: '🍗' },
   { id: 'hamburguesas', label: 'Hamburguesas', emoji: '🍔' },
   { id: 'entradas', label: 'Entradas', emoji: '🧀' },
+  { id: 'combos', label: 'Combos', emoji: '🎁' },
   { id: 'bebidas', label: 'Bebidas', emoji: '🍺' },
   { id: 'postres', label: 'Postres', emoji: '🍰' },
 ]
@@ -25,6 +26,8 @@ const GRUPO_POR_CATEGORIA: Record<string, GrupoId> = {
   wings: 'alitas',
   alitas: 'alitas',
   entradas: 'entradas',
+  combos: 'combos',
+  combo: 'combos',
   postres: 'postres',
 }
 
@@ -40,6 +43,8 @@ const EMOJI_POR_CATEGORIA: Record<string, string> = {
   wings: '🍗',
   alitas: '🍗',
   entradas: '🧀',
+  combos: '🎁',
+  combo: '🎁',
   postres: '🍰',
 }
 
@@ -68,6 +73,7 @@ const TONO_POR_CATEGORIA: Record<string, [string, string]> = {
   wings: ['#ff3b2f', '#5c0d08'],
   alitas: ['#ff3b2f', '#5c0d08'],
   entradas: ['#f5b800', '#6b4a00'],
+  combos: ['#ffcc00', '#993300'],
   postres: ['#c98bff', '#3d1a5c'],
 }
 
