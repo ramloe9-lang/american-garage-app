@@ -31,7 +31,7 @@ def crear_router_publico(obtener_menu_completo_func: Callable[..., Any]):
             temperatura_base = 16.0
 
         # Compensamos la resta de 2 grados del frontend si tu lógica original lo hacía
-        temperatura_compensada = temperatura_base + 2.0
+        temperatura_compensada = temperatura_base + 4.0
 
         # Campos privados a excluir de los productos
         campos_privados = {
