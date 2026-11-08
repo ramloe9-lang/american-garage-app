@@ -9,6 +9,15 @@ interface Producto {
   [key: string]: any;
 }
 
+interface ItemCarrito {
+  id: string | number;
+  nombre: string;
+  precio: number;
+  cantidad: int;
+  comentarios: string;
+  subtotal: number;
+}
+
 interface BotonOrdenarHeaderProps {
   productosDisponibles?: Producto[];
 }
@@ -16,6 +25,7 @@ interface BotonOrdenarHeaderProps {
 export function BotonOrdenarHeader({ productosDisponibles = [] }: BotonOrdenarHeaderProps) {
   const mesa = useMesa();
   const [mostrarCatalogo, setMostrarCatalogo] = useState(false);
+  const [mostrarResumen, setMostrarResumen] = useState(false);
   const [productoSeleccionado, setProductoSeleccionado] = useState<Producto | null>(null);
   
   // Estado para el modal de personalización
@@ -23,7 +33,7 @@ export function BotonOrdenarHeader({ productosDisponibles = [] }: BotonOrdenarHe
   const [comentarios, setComentarios] = useState<string>('');
   
   // Carrito de compras persistente en el celular del cliente
-  const [carrito, setCarrito] = useState<any[]>(() => {
+  const [carrito, setCarrito] = useState<ItemCarrito[]>(() => {
     const saved = localStorage.getItem('carrito_pedidos');
     return saved ? JSON.parse(saved) : [];
   });
@@ -43,7 +53,7 @@ export function BotonOrdenarHeader({ productosDisponibles = [] }: BotonOrdenarHe
 
     const precioUnitario = productoSeleccionado.precio_final ?? productoSeleccionado.precio_original ?? 0;
 
-    const nuevoItem = {
+    const nuevoItem: ItemCarrito = {
       id: productoSeleccionado.id,
       nombre: productoSeleccionado.nombre,
       precio: precioUnitario,
@@ -53,9 +63,23 @@ export function BotonOrdenarHeader({ productosDisponibles = [] }: BotonOrdenarHe
     };
 
     setCarrito([...carrito, nuevoItem]);
-    setProductoSeleccionado(null);
+    setProductoSeleccionado(null); // Cierra solo el modal de notas, regresa al catálogo para seguir pidiendo
+  };
+
+  const eliminarDelCarrito = (index: number) => {
+    const nuevoCarrito = carrito.filter((_, i) => i !== index);
+    setCarrito(nuevoCarrito);
+  };
+
+  const totalGeneral = carrito.reduce((acc, item) => acc + item.subtotal, 0);
+
+  const enviarOrden = () => {
+    if (carrito.length === 0) return;
+    alert(`¡Orden enviada con éxito para la Mesa ${mesa}! Total: $${totalGeneral}. En breve la cocina comenzará a prepararla.`);
+    setCarrito([]);
+    localStorage.removeItem('carrito_pedidos');
+    setMostrarResumen(false);
     setMostrarCatalogo(false);
-    alert(`¡Agregado! ${cantidad}x ${nuevoItem.nombre} a tu orden (Mesa ${mesa}).`);
   };
 
   return (
@@ -82,7 +106,7 @@ export function BotonOrdenarHeader({ productosDisponibles = [] }: BotonOrdenarHe
               : 'bg-neutral-700 text-neutral-400 cursor-not-allowed'
           } text-xs font-bold px-3 py-1.5 rounded-full transition-transform active:scale-95 flex items-center gap-1.5`}
         >
-          🛒 Ordenar ya
+          🛒 Ordenar ya {carrito.length > 0 && `(${carrito.length})`}
         </button>
       </div>
 
@@ -91,7 +115,7 @@ export function BotonOrdenarHeader({ productosDisponibles = [] }: BotonOrdenarHe
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex justify-center items-center p-4">
           <div className="bg-neutral-900 border border-neutral-800 w-full max-w-md rounded-2xl p-5 max-h-[85vh] flex flex-col relative shadow-2xl">
             <div className="flex justify-between items-center mb-3 pb-2 border-b border-neutral-800">
-              <h2 className="text-lg font-bold text-yellow-400">Selecciona para tu orden</h2>
+              <h2 className="text-lg font-bold text-yellow-400">Selecciona tus platillos</h2>
               <button 
                 onClick={() => setMostrarCatalogo(false)}
                 className="text-neutral-400 hover:text-white text-xl font-bold p-1"
@@ -100,7 +124,7 @@ export function BotonOrdenarHeader({ productosDisponibles = [] }: BotonOrdenarHe
               </button>
             </div>
             
-            <div className="space-y-2.5 overflow-y-auto pr-1 flex-1">
+            <div className="space-y-2.5 overflow-y-auto pr-1 flex-1 mb-4">
               {productosDisponibles && productosDisponibles.length > 0 ? (
                 productosDisponibles.map((prod: Producto) => (
                   <div 
@@ -115,7 +139,7 @@ export function BotonOrdenarHeader({ productosDisponibles = [] }: BotonOrdenarHe
                       </p>
                     </div>
                     <span className="text-xs bg-yellow-500 hover:bg-yellow-400 text-neutral-950 font-bold px-2.5 py-1 rounded-lg">
-                      + Pedir
+                      + Agregar
                     </span>
                   </div>
                 ))
@@ -123,6 +147,17 @@ export function BotonOrdenarHeader({ productosDisponibles = [] }: BotonOrdenarHe
                 <p className="text-neutral-400 text-center py-6 text-sm">No hay productos disponibles por el momento.</p>
               )}
             </div>
+
+            {/* BOTÓN PARA VER EL CARRITO ACUMULADO */}
+            {carrito.length > 0 && (
+              <button 
+                onClick={() => setMostrarResumen(true)}
+                className="w-full bg-green-600 hover:bg-green-500 text-white font-bold py-3 rounded-xl text-sm transition-colors shadow-lg flex justify-between px-4 items-center"
+              >
+                <span>Ver mi orden (${totalGeneral})</span>
+                <span className="bg-white/20 px-2 py-0.5 rounded-full text-xs">{carrito.length} items</span>
+              </button>
+            )}
           </div>
         </div>
       )}
@@ -177,8 +212,67 @@ export function BotonOrdenarHeader({ productosDisponibles = [] }: BotonOrdenarHe
               onClick={agregarAlCarrito}
               className="w-full bg-yellow-500 hover:bg-yellow-400 text-neutral-950 font-bold py-2.5 rounded-xl text-sm transition-colors shadow-lg"
             >
-              Agregar a la orden (${(productoSeleccionado.precio_final ?? productoSeleccionado.precio_original ?? 0) * cantidad})
+              Añadir a la orden (${(productoSeleccionado.precio_final ?? productoSeleccionado.precio_original ?? 0) * cantidad})
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL 3: RESUMEN DE LA ORDEN (CARRITO FINAL) */}
+      {mostrarResumen && (
+        <div className="fixed inset-0 bg-black/90 backdrop-blur-sm z-[70] flex justify-center items-center p-4">
+          <div className="bg-neutral-900 border border-neutral-800 w-full max-w-md rounded-2xl p-5 max-h-[85vh] flex flex-col relative shadow-2xl">
+            <div className="flex justify-between items-center mb-3 pb-2 border-b border-neutral-800">
+              <h2 className="text-lg font-bold text-yellow-400">Resumen de tu Orden (Mesa {mesa})</h2>
+              <button 
+                onClick={() => setMostrarResumen(false)}
+                className="text-neutral-400 hover:text-white text-xl font-bold p-1"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="space-y-3 overflow-y-auto pr-1 flex-1 mb-4">
+              {carrito.map((item, index) => (
+                <div key={index} className="bg-neutral-800/80 p-3 rounded-xl border border-neutral-700/50 flex justify-between items-start">
+                  <div>
+                    <p className="font-bold text-white text-sm">{item.cantidad}x {item.nombre}</p>
+                    {item.comentarios && (
+                      <p className="text-xs text-neutral-400 italic mt-0.5">Nota: {item.comentarios}</p>
+                    )}
+                    <p className="text-xs text-yellow-400 font-bold mt-1">${item.subtotal}</p>
+                  </div>
+                  <button 
+                    onClick={() => eliminarDelCarrito(index)}
+                    className="text-red-400 hover:text-red-300 text-xs font-bold px-2 py-1 bg-red-500/10 rounded-lg"
+                  >
+                    Quitar
+                  </button>
+                </div>
+              ))}
+            </div>
+
+            <div className="border-t border-neutral-800 pt-3 mb-4">
+              <div className="flex justify-between text-white font-bold text-base">
+                <span>Total a pagar:</span>
+                <span className="text-yellow-400">${totalGeneral}</span>
+              </div>
+            </div>
+
+            <div className="flex gap-2">
+              <button 
+                onClick={() => setMostrarResumen(false)}
+                className="w-1/2 bg-neutral-800 hover:bg-neutral-700 text-white font-bold py-2.5 rounded-xl text-xs transition-colors"
+              >
+                Seguir pidiendo
+              </button>
+              <button 
+                onClick={enviarOrden}
+                className="w-1/2 bg-green-600 hover:bg-green-500 text-white font-bold py-2.5 rounded-xl text-xs transition-colors shadow-lg"
+              >
+                Enviar a cocina 🚀
+              </button>
+            </div>
           </div>
         </div>
       )}
