@@ -25,7 +25,7 @@ export interface MenuItem {
   grupo: GrupoId
   precio: number
   precioOriginal: number
-  descripcion?: string // <-- Campo para la descripción mediana del producto
+  descripcion?: string | null // <-- Soporte explícito y tolerante para la descripción
   temperatura: TempIdeal
   descuentoPct: number // 0 = sin oferta; 15 = 15% de descuento
   agotado: boolean
@@ -37,7 +37,7 @@ export interface MenuItem {
   precio_final?: number
   descuento_aplicado?: number
   temp_ideal?: string
-  temperatura_ideal?: string // <-- Agregada para soporte explícito del backend/clima
+  temperatura_ideal?: string // <-- Soporte explícito del backend/clima
   insignia_sugerida?: string | null
   insignias?: string[]
   disponible?: boolean
