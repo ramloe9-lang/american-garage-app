@@ -1,17 +1,29 @@
 import React, { useState, useEffect } from 'react';
-import { useMesa } from '../hooks/useMesa'; // Ajusta la ruta si tu carpeta de hooks está en otra ubicación
+import { useMesa } from '../hooks/useMesa';
 
-export function BotonOrdenarHeader({ productosDisponibles }) {
+interface Producto {
+  id: string | number;
+  nombre: string;
+  precio_final?: number;
+  precio_original?: number;
+  [key: string]: any;
+}
+
+interface BotonOrdenarHeaderProps {
+  productosDisponibles?: Producto[];
+}
+
+export function BotonOrdenarHeader({ productosDisponibles = [] }: BotonOrdenarHeaderProps) {
   const mesa = useMesa();
   const [mostrarCatalogo, setMostrarCatalogo] = useState(false);
-  const [productoSeleccionado, setProductoSeleccionado] = useState(null);
+  const [productoSeleccionado, setProductoSeleccionado] = useState<Producto | null>(null);
   
   // Estado para el modal de personalización
-  const [cantidad, setCantidad] = useState(1);
-  const [comentarios, setComentarios] = useState('');
+  const [cantidad, setCantidad] = useState<number>(1);
+  const [comentarios, setComentarios] = useState<string>('');
   
   // Carrito de compras persistente en el celular del cliente
-  const [carrito, setCarrito] = useState(() => {
+  const [carrito, setCarrito] = useState<any[]>(() => {
     const saved = localStorage.getItem('carrito_pedidos');
     return saved ? JSON.parse(saved) : [];
   });
@@ -20,7 +32,7 @@ export function BotonOrdenarHeader({ productosDisponibles }) {
     localStorage.setItem('carrito_pedidos', JSON.stringify(carrito));
   }, [carrito]);
 
-  const abrirPersonalizacion = (prod) => {
+  const abrirPersonalizacion = (prod: Producto) => {
     setProductoSeleccionado(prod);
     setCantidad(1);
     setComentarios('');
@@ -29,13 +41,15 @@ export function BotonOrdenarHeader({ productosDisponibles }) {
   const agregarAlCarrito = () => {
     if (!productoSeleccionado) return;
 
+    const precioUnitario = productoSeleccionado.precio_final ?? productoSeleccionado.precio_original ?? 0;
+
     const nuevoItem = {
       id: productoSeleccionado.id,
       nombre: productoSeleccionado.nombre,
-      precio: productoSeleccionado.precio_final ?? productoSeleccionado.precio_original,
+      precio: precioUnitario,
       cantidad,
       comentarios,
-      subtotal: (productoSeleccionado.precio_final ?? productoSeleccionado.precio_original) * cantidad
+      subtotal: precioUnitario * cantidad
     };
 
     setCarrito([...carrito, nuevoItem]);
@@ -46,7 +60,7 @@ export function BotonOrdenarHeader({ productosDisponibles }) {
 
   return (
     <>
-      {/* BOTÓN EN LA CABECERA (Acomodado a la derecha de WINGS & BURGERS) */}
+      {/* BOTÓN EN LA CABECERA */}
       <div className="flex items-center gap-2">
         {mesa && (
           <span className="text-xs bg-yellow-500/20 text-yellow-400 border border-yellow-500/30 font-bold px-2.5 py-1 rounded-full">
@@ -88,7 +102,7 @@ export function BotonOrdenarHeader({ productosDisponibles }) {
             
             <div className="space-y-2.5 overflow-y-auto pr-1 flex-1">
               {productosDisponibles && productosDisponibles.length > 0 ? (
-                productosDisponibles.map((prod) => (
+                productosDisponibles.map((prod: Producto) => (
                   <div 
                     key={prod.id}
                     onClick={() => abrirPersonalizacion(prod)}
@@ -97,7 +111,7 @@ export function BotonOrdenarHeader({ productosDisponibles }) {
                     <div>
                       <p className="font-semibold text-white text-sm">{prod.nombre}</p>
                       <p className="text-xs text-yellow-400 font-bold mt-0.5">
-                        ${prod.precio_final ?? prod.precio_original}
+                        ${prod.precio_final ?? prod.precio_original ?? 0}
                       </p>
                     </div>
                     <span className="text-xs bg-yellow-500 hover:bg-yellow-400 text-neutral-950 font-bold px-2.5 py-1 rounded-lg">
@@ -126,7 +140,7 @@ export function BotonOrdenarHeader({ productosDisponibles }) {
 
             <h3 className="text-base font-bold text-white mb-1">{productoSeleccionado.nombre}</h3>
             <p className="text-xs text-yellow-400 font-semibold mb-4">
-              Precio unitario: ${productoSeleccionado.precio_final ?? productoSeleccionado.precio_original}
+              Precio unitario: ${productoSeleccionado.precio_final ?? productoSeleccionado.precio_original ?? 0}
             </p>
 
             {/* Ajustar Cantidad */}
@@ -163,7 +177,7 @@ export function BotonOrdenarHeader({ productosDisponibles }) {
               onClick={agregarAlCarrito}
               className="w-full bg-yellow-500 hover:bg-yellow-400 text-neutral-950 font-bold py-2.5 rounded-xl text-sm transition-colors shadow-lg"
             >
-              Agregar a la orden (${(productoSeleccionado.precio_final ?? productoSeleccionado.precio_original) * cantidad})
+              Agregar a la orden (${(productoSeleccionado.precio_final ?? productoSeleccionado.precio_original ?? 0) * cantidad})
             </button>
           </div>
         </div>
