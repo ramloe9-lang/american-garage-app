@@ -8,13 +8,15 @@ export function useMesa(): string | null {
     const params = new URLSearchParams(window.location.search);
     const mesaUrl = params.get('mesa');
 
-    if (mesaUrl) {
-      localStorage.setItem('mesa_actual', mesaUrl);
-      setMesa(mesaUrl);
+    if (mesaUrl && /^[A-Za-z0-9]{1,3}$/.test(mesaUrl)) {
+      const mesaUpper = mesaUrl.toUpperCase();
+      localStorage.setItem('mesa_actual', mesaUpper);
+      setMesa(mesaUpper);
     } else {
-      // 2. Si no viene en la URL, revisar si ya estaba guardada en el celular
-      const mesaGuardada = localStorage.getItem('mesa_actual');
-      if (mesaGuardada) setMesa(mesaGuardada);
+      // 2. Si NO viene en la URL, limpiamos cualquier rastro anterior 
+      // para obligar a que se escanee el QR real de la mesa.
+      localStorage.removeItem('mesa_actual');
+      setMesa(null);
     }
   }, []);
 
