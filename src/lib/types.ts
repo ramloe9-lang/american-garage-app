@@ -25,6 +25,7 @@ export interface MenuItem {
   grupo: GrupoId
   precio: number
   precioOriginal: number
+  descripcion?: string // <-- Campo para la descripción mediana del producto
   temperatura: TempIdeal
   descuentoPct: number // 0 = sin oferta; 15 = 15% de descuento
   agotado: boolean
