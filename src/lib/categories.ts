@@ -28,7 +28,8 @@ const GRUPO_POR_CATEGORIA: Record<string, GrupoId> = {
   entradas: 'entradas',
   combos: 'combos',
   combo: 'combos',
-  postres: 'postres',
+  'hot dogs': 'entradas', // o la categoría que uses
+  'hot dog': 'entradas',
 }
 
 const EMOJI_POR_CATEGORIA: Record<string, string> = {
@@ -49,11 +50,18 @@ const EMOJI_POR_CATEGORIA: Record<string, string> = {
 }
 
 export function grupoDe(categoria: string): GrupoId {
-  const grupo = GRUPO_POR_CATEGORIA[sinAcentos(categoria)]
-  if (!grupo && import.meta.env.DEV) {
-    console.warn(`[menu] Categoría sin mapear: "${categoria}". Agrégala en lib/categories.ts`)
+  const clave = sinAcentos(categoria)
+  const grupo = GRUPO_POR_CATEGORIA[clave]
+  
+  if (!grupo) {
+    // Si no encuentra coincidencia exacta, revisa si contiene la palabra "combo" por seguridad
+    if (clave.includes('combo')) return 'combos'
+    if (import.meta.env.DEV) {
+      console.warn(`[menu] Categoría sin mapear: "${categoria}". Agrégala en lib/categories.ts`)
+    }
+    return 'entradas'
   }
-  return grupo ?? 'entradas'
+  return grupo
 }
 
 export function emojiDe(categoria: string): string {
