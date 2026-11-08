@@ -12,6 +12,7 @@ interface Props {
 
 /** Pestañas pegadas arriba. La píldora roja se desliza entre pestañas (layoutId compartido). */
 export default function CategoryTabs({ activo, conteos, onChange }: Props) {
+  // Filtramos estrictamente los grupos que tengan un conteo mayor a 0
   const grupos = GRUPOS.filter((g) => (conteos[g.id] ?? 0) > 0)
   const botones = useRef<Partial<Record<GrupoId, HTMLButtonElement | null>>>({})
 
