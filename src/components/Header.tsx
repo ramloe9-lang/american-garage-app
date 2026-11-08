@@ -1,11 +1,17 @@
+import { BotonOrdenarHeader } from './BotonOrdenarHeader'
+
 /** Mesa desde la URL del QR (?mesa=5). Solo letras y números, máximo 3 caracteres. */
 function leerMesa(): string | null {
   const valor = new URLSearchParams(window.location.search).get('mesa')
   return valor && /^[A-Za-z0-9]{1,3}$/.test(valor) ? valor.toUpperCase() : null
 }
 
+interface HeaderProps {
+  productosDisponibles?: any[]
+}
+
 /** Logo tipográfico: letrero de garaje con cinta de precaución y placa dorada. */
-export default function Header() {
+export default function Header({ productosDisponibles = [] }: HeaderProps) {
   const mesa = leerMesa()
 
   return (
@@ -17,16 +23,21 @@ export default function Header() {
           <span className="block">Garage</span>
         </h1>
 
-        <div className="mt-4 flex items-center justify-between gap-3">
-          <p className="inline-flex -rotate-2 items-center gap-2 rounded-sm border-2 border-oro bg-carbon px-3 py-1 font-display text-xl font-extrabold uppercase tracking-wider text-oro">
-            <span className="llama" aria-hidden="true">🔥</span>
-            Wings &amp; Burgers
-          </p>
-          {mesa && (
-            <p className="rounded-md px-3 py-1 font-display text-xl font-bold text-hueso ring-1 ring-inset ring-ceniza/50">
-              Mesa {mesa}
+        <div className="mt-4 flex items-center justify-between gap-3 flex-wrap">
+          <div className="flex items-center gap-3">
+            <p className="inline-flex -rotate-2 items-center gap-2 rounded-sm border-2 border-oro bg-carbon px-3 py-1 font-display text-xl font-extrabold uppercase tracking-wider text-oro">
+              <span className="llama" aria-hidden="true">🔥</span>
+              Wings &amp; Burgers
             </p>
-          )}
+            {mesa && (
+              <p className="rounded-md px-3 py-1 font-display text-xl font-bold text-hueso ring-1 ring-inset ring-ceniza/50">
+                Mesa {mesa}
+              </p>
+            )}
+          </div>
+
+          {/* Botón de Ordenar integrado junto a tu placa de Wings & Burgers */}
+          <BotonOrdenarHeader productosDisponibles={productosDisponibles} />
         </div>
       </div>
     </header>
