@@ -31,7 +31,7 @@ def crear_router_publico(obtener_menu_completo_func: Callable[..., Any]):
 
         # Como tu frontend resta 2 grados por defecto, le sumamos 2 aquí 
         # para que al hacer la resta matemática en la pantalla marque exactamente tus 16°C
-        temperatura_enviada = temp_real + 2.0
+        temperatura_enviada = temp_real + 4.0
         
         modo_val = "frio" if temperatura_enviada < 20 else "calor"
 
