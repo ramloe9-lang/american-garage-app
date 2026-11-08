@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 
-export function useMesa() {
-  const [mesa, setMesa] = useState(null);
+export function useMesa(): string | null {
+  const [mesa, setMesa] = useState<string | null>(null);
 
   useEffect(() => {
     // 1. Revisar si viene la mesa en la URL (?mesa=4)
