@@ -81,7 +81,31 @@ export function BotonOrdenarHeader({ productosDisponibles = [] }: BotonOrdenarHe
 
   const enviarOrden = () => {
     if (carrito.length === 0) return;
-    alert(`¡Orden enviada con éxito para la Mesa ${mesa}! Total: $${totalGeneral.toFixed(2)}. En breve la cocina comenzará a prepararla.`);
+
+    // 1. Armamos el encabezado del mensaje con la mesa actual
+    let mensaje = `🔥 *NUEVO PEDIDO - MESA ${mesa}* 🔥\n\n`;
+
+    // 2. Recorremos los productos del carrito para listarlos
+    carrito.forEach((item, index) => {
+      mensaje += `${index + 1}. *${item.cantidad}x* ${item.nombre} ($${item.subtotal.toFixed(2)})\n`;
+      if (item.comentarios) {
+        mensaje += `   _Nota: ${item.comentarios}_\n`;
+      }
+    });
+
+    // 3. Agregamos el total general
+    mensaje += `\n*Total a pagar: $${totalGeneral.toFixed(2)}*`;
+
+    // ⚠️ REEMPLAZA ESTE NÚMERO con el teléfono real del restaurante (ej: 521XXXXXXXXXX)
+    const telefonoRestaurante = "524425556530"; 
+
+    // 4. Creamos el enlace oficial de WhatsApp con el texto codificado
+    const urlWhatsapp = `https://wa.me/${telefonoRestaurante}?text=${encodeURIComponent(mensaje)}`;
+
+    // 5. Abrimos WhatsApp en una nueva pestaña / app móvil
+    window.open(urlWhatsapp, '_blank');
+
+    // 6. Limpiamos el carrito y cerramos los modales
     setCarrito([]);
     localStorage.removeItem('carrito_pedidos');
     setMostrarResumen(false);
@@ -93,7 +117,7 @@ export function BotonOrdenarHeader({ productosDisponibles = [] }: BotonOrdenarHe
       {/* BOTÓN EN LA CABECERA */}
       <div className="flex items-center gap-2">
         {mesa && (
-          <span className="text-xs bg-yellow-500/20 text-yellow-400 border border-yellow-500/30 font-bold px-2.5 py-1 rounded-full">
+          <span className="text-xs bg-yellow-500/25 text-yellow-400 border border-yellow-500/30 font-bold px-2.5 py-1 rounded-full">
             Mesa {mesa}
           </span>
         )}
