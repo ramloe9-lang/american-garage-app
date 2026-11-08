@@ -9,7 +9,7 @@ def crear_router_publico(obtener_menu_completo_func: Callable[..., Any]):
 
     @router.get("/public")
     async def obtener_menu_publico(response: Response):
-        # Capturamos la respuesta del menú completo
+        # Capturamos la respuesta del menú completo y las cabeceras del clima real
         internal_response = Response()
         sig = inspect.signature(obtener_menu_completo_func)
         kwargs = {"response": internal_response} if "response" in sig.parameters else {}
@@ -20,6 +20,15 @@ def crear_router_publico(obtener_menu_completo_func: Callable[..., Any]):
             res = await run_in_threadpool(obtener_menu_completo_func, **kwargs)
             if hasattr(res, "__await__"):
                 res = await res
+
+        # Obtenemos la temperatura y el modo reales que calcula tu backend
+        temp_val = internal_response.headers.get("X-Temperatura", "20")
+        modo_val = internal_response.headers.get("X-Clima-Modo", "calor")
+
+        try:
+            temperatura_num = float(temp_val)
+        except (ValueError, TypeError):
+            temperatura_num = 20.0
 
         # Campos privados a excluir de los productos
         campos_privados = {
@@ -53,7 +62,6 @@ def crear_router_publico(obtener_menu_completo_func: Callable[..., Any]):
                     or data.get("imagen_url")
                 )
                 
-                # Asignamos la URL limpia o null si no existe
                 data["imagenUrl"] = str(imagen_val).strip() if imagen_val and str(imagen_val).strip() not in ["", "none", "null", "undefined"] else None
 
                 # --- EXTRACCIÓN MULTICLAVE BLINDADA PARA TEMPERATURA ---
@@ -90,14 +98,14 @@ def crear_router_publico(obtener_menu_completo_func: Callable[..., Any]):
 
         response.headers["Cache-Control"] = "public, max-age=60"
 
-        # Retornamos el JSON completo con clima y menú con imágenes listas
+        # Retornamos el JSON usando las variables dinámicas reales del clima y el menú con imágenes
         return {
             "clima": {
                 "ciudad": "Querétaro",
-                "temperatura": 20.0,
-                "modo": "calor",
-                "condicion": "calor",
-                "descripcion": "Día fresco en Querétaro",
+                "temperatura": temperatura_num,
+                "modo": modo_val,
+                "condicion": modo_val,
+                "descripcion": f"Día {modo_val} en Querétaro",
             },
             "menu": items_filtrados,
         }
