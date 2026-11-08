@@ -13,7 +13,7 @@ interface ItemCarrito {
   id: string | number;
   nombre: string;
   precio: number;
-  cantidad: int;
+  cantidad: number;
   comentarios: string;
   subtotal: number;
 }
@@ -63,7 +63,7 @@ export function BotonOrdenarHeader({ productosDisponibles = [] }: BotonOrdenarHe
     };
 
     setCarrito([...carrito, nuevoItem]);
-    setProductoSeleccionado(null); // Cierra solo el modal de notas, regresa al catálogo para seguir pidiendo
+    setProductoSeleccionado(null);
   };
 
   const eliminarDelCarrito = (index: number) => {
