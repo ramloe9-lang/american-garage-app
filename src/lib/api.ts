@@ -112,7 +112,7 @@ function normalizarItem(raw: ApiItem): MenuItem {
   const precioOriginal = aNumero(get('Precio_Venta', 'precio_original', 'precio')) ?? 0
   const id = String(get('ID_Producto', 'ID_Bebida', 'id') ?? nombreCrudo)
   
-  // Lectura robusta de la descripción tolera variantes con/sin acentos, mayúsculas o nombres alternativos
+  // Lectura robusta de la descripción
   const descripcionRaw = get(
     'Descripcion',
     'Descripción',
@@ -144,7 +144,6 @@ function normalizarItem(raw: ApiItem): MenuItem {
   const rawInsignias = raw.insignias
   const insignias = Array.isArray(rawInsignias) ? (rawInsignias as string[]) : []
 
-  // Extraemos directamente lo que escribió el usuario en el Sheet
   const tempIdealVal = get('Temperatura_Ideal', 'temperatura_ideal', 'temp_ideal', 'temperatura')
   const tempIdeal = String(tempIdealVal ?? '').trim().toLowerCase()
 
@@ -155,7 +154,7 @@ function normalizarItem(raw: ApiItem): MenuItem {
     grupo: grupoDe(categoria),
     precio,
     precioOriginal,
-    descripcion, // <-- Asignamos la descripción procesada y limpia
+    descripcion,
     temperatura: normalizarTemperaturaIdeal(tempIdealVal),
     agotado: sinAcentos(String(get('Estado_Stock', 'estado_stock') ?? '')) === 'agotado',
     recomendado: aBooleano(get('recomendado')) || chefPorInsignia,
@@ -183,4 +182,46 @@ function conInsigniasDemo(items: MenuItem[]): MenuItem[] {
 
 const TEMP_DEMO: Record<string, number> = { calor: 31, frio: 12, templado: 21 }
 function conClimaDemo(base: Clima | null): Clima | null {
-  const modo = import.meta.env.VITE_DEMO_CLIMA
+  const modo = import.meta.env.VITE_DEMO_CLIMA as ModoClima | undefined
+  if (!modo || !(modo in TEMP_DEMO)) return base
+  return {
+    ciudad: base?.ciudad ?? 'Querétaro',
+    temperatura: TEMP_DEMO[modo],
+    modo,
+    descripcion: modo === 'frio' ? 'Día fresco' : modo === 'calor' ? 'Día caluroso' : 'Clima templado',
+  }
+}
+
+export async function fetchMenu(signal?: AbortSignal): Promise<Menu> {
+  let res: Response
+  try {
+    res = await fetch(`${BASE_URL}${MENU_PATH}`, { signal })
+  } catch (e) {
+    if (e instanceof DOMException && e.name === 'AbortError') throw e
+    throw new ErrorMenu('red', 'No hay conexión con el servidor del menú.')
+  }
+  if (!res.ok) throw new ErrorMenu('servidor', `El servidor respondió con error ${res.status}.`)
+
+  let data: ApiMenuResponse | ApiItem[]
+  try {
+    data = (await res.json()) as ApiMenuResponse | ApiItem[]
+  } catch {
+    throw new ErrorMenu('servidor', 'La respuesta del servidor no me dio un formato válido.')
+  }
+
+  const lista = Array.isArray(data) ? data : (data.menu ?? [])
+  const climaBackend = Array.isArray(data) ? null : data.clima
+  let items = lista.map(normalizarItem)
+
+  if (import.meta.env.DEV && import.meta.env.VITE_DEMO_BADGES === 'true') items = conInsigniasDemo(items)
+
+  let climaFinal = normalizarClima(climaBackend)
+
+  if (!climaFinal && !import.meta.env.VITE_DEMO_CLIMA) {
+    climaFinal = await obtenerClimaEnTiempoReal('Queretaro')
+  }
+
+  climaFinal = conClimaDemo(climaFinal)
+
+  return { clima: climaFinal, items }
+}
