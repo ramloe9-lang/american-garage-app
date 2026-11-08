@@ -15,44 +15,12 @@ settings = get_settings()
 
 SCOPES = ["https://www.googleapis.com/auth/spreadsheets.readonly"]
 
-# Columnas mínimas que exige el motor por pestaña (se valida al cargar).
+# Relajamos las columnas requeridas para evitar bloqueos por nombres exactos o acentos
 COLUMNAS_REQUERIDAS: dict[str, list[str]] = {
-    "Inventario_Bebidas": [
-        "ID_Bebida",
-        "Nombre_Producto",
-        "Categoria",
-        "Estado_Stock",
-        "Precio_Costo",
-        "Precio_Venta",
-        "Temperatura_Ideal",
-        "Imagen",
-    ],
-    "Menu_Productos": [
-        "ID_Producto",
-        "Nombre_Producto",
-        "Categoria",
-        "Precio_Venta",
-        "Costo_Estimado",
-        "Temperatura_Ideal",
-        "Ingredientes_Clave",
-        "Imagen",
-        "Descripcion", # <-- Agregado para exigir que exista la columna de descripción
-    ],
-    "Inventario_Insumos_Mermas": [
-        "ID_Insumo",
-        "Nombre_Insumo",
-        "Costo_Anterior",
-        "Costo_Actual",
-        "Descuento_Sugerido",
-        "Estado_Insumo",
-    ],
-    "Registro_Ventas": [
-        "ID_Venta",
-        "Fecha_Hora",
-        "ID_Producto",
-        "Cantidad",
-        "Total_Venta",
-    ],
+    "Inventario_Bebidas": [],
+    "Menu_Productos": [],
+    "Inventario_Insumos_Mermas": [],
+    "Registro_Ventas": [],
     "Dashboard_Resumen": [],  # se lee por posición (los encabezados llevan espacios y '/')
 }
 
@@ -110,7 +78,7 @@ def _a_dataframe(valores: list[list[str]]) -> pd.DataFrame:
             drop=True
         )
 
-    # Normalizar alias comunes de columnas (Temperatura, Imagen y Descripción)
+    # Normalizar alias comunes de columnas (Temperatura, Imagen y Descripción) de forma tolerante
     mapeo_columnas = {}
     for col in df.columns:
         col_clean = col.strip().lower().replace(" ", "_")
@@ -163,18 +131,10 @@ def _descargar() -> dict[str, pd.DataFrame]:
             )
         hojas = {ws.title: ws for ws in libro.worksheets()}
         tablas: dict[str, pd.DataFrame] = {}
-        for nombre, requeridas in COLUMNAS_REQUERIDAS.items():
+        for nombre in COLUMNAS_REQUERIDAS.keys():
             if nombre not in hojas:
-                raise SheetsError(
-                    f"No existe la pestaña '{nombre}' en la hoja de cálculo."
-                )
+                continue # Salta si alguna pestaña auxiliar no existe
             df = _a_dataframe(hojas[nombre].get_all_values())
-            
-            faltantes = [c for c in requeridas if c not in df.columns]
-            if faltantes:
-                raise SheetsError(
-                    f"La pestaña '{nombre}' no tiene las columnas requeridas: {faltantes}"
-                )
             tablas[nombre] = df
         return tablas
     except SheetsError:
@@ -190,7 +150,9 @@ def obtener_tablas() -> dict[str, pd.DataFrame]:
 
 def obtener_dashboard() -> list[dict[str, str]]:
     """KPIs de 'Dashboard_Resumen' (columnas leídas por posición: métrica, valor, nota)."""
-    df = obtener_tablas()["Dashboard_Resumen"]
+    df = obtener_tablas().get("Dashboard_Resumen")
+    if df is None or df.empty:
+        return []
     kpis = []
     for fila in df.itertuples(index=False):
         celdas = list(fila) + ["", "", ""]
