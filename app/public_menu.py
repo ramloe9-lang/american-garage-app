@@ -23,15 +23,22 @@ def crear_router_publico(obtener_menu_completo_func: Callable[..., Any]):
 
         # Obtenemos la temperatura real calculada en el backend
         temp_val = internal_response.headers.get("X-Temperatura", "16")
-        modo_val = internal_response.headers.get("X-Clima-Modo", "frio")
 
         try:
             temperatura_base = float(temp_val)
         except (ValueError, TypeError):
             temperatura_base = 16.0
 
-        # Compensamos la resta de 2 grados del frontend si tu lógica original lo hacía
+        # Mantenemos tu compensación de + 4.0 grados
         temperatura_compensada = temperatura_base + 4.0
+
+        # Lógica estricta de umbrales: menor a 18°C es frío, mayor a 25°C es calor
+        if temperatura_compensada < 18.0:
+            modo_val = "frio"
+        elif temperatura_compensada > 25.0:
+            modo_val = "calor"
+        else:
+            modo_val = "indiferente"
 
         # Campos privados a excluir de los productos
         campos_privados = {
@@ -58,12 +65,12 @@ def crear_router_publico(obtener_menu_completo_func: Callable[..., Any]):
                     data.pop(campo, None)
 
                 # --- EXTRACCIÓN BLINDADA DE LA IMAGEN ---
-                # Buscamos en todas las posibles variaciones de nombres de columnas
                 imagen_val = (
                     data.get("imagenUrl")
                     or data.get("Imagen")
                     or data.get("imagen")
                     or data.get("imagen_url")
+                    or data.get("Imagen_URL")
                 )
                 
                 if imagen_val and str(imagen_val).strip() not in ["", "none", "null", "undefined"]:
@@ -105,7 +112,7 @@ def crear_router_publico(obtener_menu_completo_func: Callable[..., Any]):
 
         response.headers["Cache-Control"] = "public, max-age=60"
 
-        # Devolvemos el clima real y el menú con el campo imagenUrl inyectado
+        # Devolvemos el clima con los umbrales correctos y el menú con imágenes listas
         return {
             "clima": {
                 "ciudad": "Querétaro",
