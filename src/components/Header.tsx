@@ -31,14 +31,10 @@ export default function Header({ productosDisponibles = [] }: HeaderProps) {
               Wings &amp; Burgers
             </p>
             
-            {/* Indicador de Mesa o Advertencia si no se ha escaneado el QR */}
-            {mesa ? (
+            {/* Solo muestra el indicador si la mesa viene especificada en la URL */}
+            {mesa && (
               <p className="rounded-md px-3 py-1 font-display text-lg font-bold text-yellow-400 bg-yellow-500/20 border border-yellow-500/30">
                 Mesa {mesa}
-              </p>
-            ) : (
-              <p className="rounded-md px-3 py-1 font-display text-xs font-bold text-red-400 bg-red-500/10 border border-red-500/20">
-                ⚠️ Escanea el QR de tu mesa
               </p>
             )}
           </div>
