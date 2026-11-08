@@ -14,7 +14,8 @@ class ItemMenu(BaseModel):
     insignia_sugerida: str | None = Field(description="Insignia de mayor prioridad, si aplica.")
     insignias: list[str] = Field(default_factory=list)
     prioridad_score: int = Field(ge=0, le=100)
-    temperatura_ideal: str | None = Field(default=None, description="Temperatura ideal para el producto: frio, calor, o todos.") # <-- AGREGAR ESTA LÍNEA
+    temperatura_ideal: str | None = Field(default=None, description="Temperatura ideal para el producto: frio, calor, o todos.")
+    imagenUrl: str | None = Field(default=None, description="URL de la imagen del producto (mapeado desde la columna Imagen).")
 
 
 class Kpi(BaseModel):
