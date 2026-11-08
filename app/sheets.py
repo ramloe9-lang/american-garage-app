@@ -100,19 +100,20 @@ def _a_dataframe(valores: list[list[str]]) -> pd.DataFrame:
     filas = [(f + [""] * n)[:n] for f in valores[1:]]
     df = pd.DataFrame(filas, columns=encabezado)
 
-    # Filtrar filas completamente vacías (solo si hay filas: apply sobre un DataFrame vacío
-    # descartaba las columnas y una pestaña con únicamente encabezados provocaba un 503).
+    # Filtrar filas completamente vacías
     if not df.empty:
         df = df[df.apply(lambda r: any(str(v).strip() for v in r), axis=1)].reset_index(
             drop=True
         )
 
-    # Normalizar alias comunes de Temperatura_Ideal
+    # Normalizar alias comunes de Temperatura_Ideal y la columna de Imagen
     mapeo_columnas = {}
     for col in df.columns:
         col_clean = col.strip().lower().replace(" ", "_")
         if col_clean in ["temperatura_ideal", "temp_ideal", "temperatura"]:
             mapeo_columnas[col] = "Temperatura_Ideal"
+        elif col_clean in ["imagen", "imagen_url", "imagenurl"]:
+            mapeo_columnas[col] = "imagenUrl"
 
     if mapeo_columnas:
         df = df.rename(columns=mapeo_columnas)
@@ -127,7 +128,7 @@ def _a_dataframe(valores: list[list[str]]) -> pd.DataFrame:
 
 
 def _descargar() -> dict[str, pd.DataFrame]:
-    """Lee las 5 pestañas (≈6 llamadas a la API por refresco)."""
+    """Lee las pestañas del documento."""
     try:
         try:
             libro = _obtener_cliente().open_by_key(settings.google_sheet_id)
@@ -158,7 +159,7 @@ def _descargar() -> dict[str, pd.DataFrame]:
 
 
 def obtener_tablas() -> dict[str, pd.DataFrame]:
-    """Devuelve las 5 pestañas como DataFrames (caché TTL + stale-if-error)."""
+    """Devuelve las pestañas como DataFrames (caché TTL + stale-if-error)."""
     return _cache.get_or_load("tablas", _descargar)
 
 
