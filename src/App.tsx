@@ -56,8 +56,11 @@ export default function App() {
     return c
   }, [visibles])
 
-  // Si la pestaña elegida deja de existir (refresco o filtro), cae a la primera disponible.
-  const activo = elegido && conteos[elegido] ? elegido : GRUPOS.find((g) => conteos[g.id])?.id
+  // Si la pestaña elegida tiene elementos, se respeta; si no, cae en la primera disponible que tenga conteo.
+  const activo = (elegido && conteos[elegido] && conteos[elegido]! > 0) 
+    ? elegido 
+    : GRUPOS.find((g) => (conteos[g.id] ?? 0) > 0)?.id ?? null
+
   const items = visibles.filter((i) => i.grupo === activo)
 
   const reintentar = { texto: 'Reintentar', onClick: () => refetch(), ocupado: isFetching }
