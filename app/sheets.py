@@ -1,7 +1,9 @@
 """Conexión segura a Google Sheets (gspread + oauth2client, Service Account) con caché."""
 import json
 import logging
+import re
 import threading
+import unicodedata
 
 import gspread
 import pandas as pd
@@ -63,8 +65,17 @@ def _obtener_cliente(reiniciar: bool = False) -> gspread.Client:
 
 
 def _limpiar_valor_texto(val: str) -> str | None:
+    if val is None:
+        return None
     v = str(val).strip()
     return None if v.lower() in ["", "none", "null", "nan", "undefined", "nat"] else v
+
+
+def _normalizar_texto(texto: str) -> str:
+    """Elimina acentos, espacios extra y convierte a minúsculas."""
+    nfkd = unicodedata.normalize("NFKD", str(texto))
+    sin_acentos = "".join([c for c in nfkd if not unicodedata.combining(c)])
+    return re.sub(r"[^a-z0-9]", "", sin_acentos.lower())
 
 
 def _a_dataframe(valores: list[list[str]]) -> pd.DataFrame:
@@ -83,21 +94,21 @@ def _a_dataframe(valores: list[list[str]]) -> pd.DataFrame:
             drop=True
         )
 
-    # Buscar índices exactos de columnas sin renombrar duplicados
+    # Buscar índices de columnas usando normalización sin acentos
     col_temp = None
     col_img = None
     col_desc = None
 
     for col in df.columns:
-        col_clean = col.strip().lower().replace(" ", "_")
-        if col_clean in ["temperatura_ideal", "temp_ideal", "temperatura"] and not col_temp:
+        norm = _normalizar_texto(col)
+        if norm in ["temperaturaideal", "tempideal", "temperatura"] and not col_temp:
             col_temp = col
-        elif col_clean in ["imagen", "imagen_url", "imagenurl", "foto"] and not col_img:
+        elif norm in ["imagen", "imagenurl", "foto"] and not col_img:
             col_img = col
-        elif col_clean in ["descripcion", "descripción", "descripcion_larga", "detalles"] and not col_desc:
+        elif norm in ["descripcion", "descripcionlarga", "detalles", "ingredientes"] and not col_desc:
             col_desc = col
 
-    # Construir las columnas estandarizadas de forma segura
+    # Asignar columnas estandarizadas de forma limpia
     if col_temp and col_temp in df.columns:
         df["Temperatura_Ideal"] = df[col_temp].astype(str).apply(lambda x: str(x).strip().lower())
     else:
