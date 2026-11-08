@@ -1,4 +1,5 @@
 import { BotonOrdenarHeader } from './BotonOrdenarHeader'
+import { BotonLlamarMesero } from './BotonLlamarMesero'
 
 /** Mesa desde la URL del QR (?mesa=5). Solo letras y números, máximo 3 caracteres. */
 function leerMesa(): string | null {
@@ -36,8 +37,11 @@ export default function Header({ productosDisponibles = [] }: HeaderProps) {
             )}
           </div>
 
-          {/* Botón de Ordenar integrado junto a tu placa de Wings & Burgers */}
-          <BotonOrdenarHeader productosDisponibles={productosDisponibles} />
+          {/* Botones de acción del cliente agrupados: Llamar mesero y Ordenar ya */}
+          <div className="flex items-center gap-2">
+            <BotonLlamarMesero />
+            <BotonOrdenarHeader productosDisponibles={productosDisponibles} />
+          </div>
         </div>
       </div>
     </header>
