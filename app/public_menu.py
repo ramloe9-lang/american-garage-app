@@ -30,7 +30,7 @@ def crear_router_publico(obtener_menu_completo_func: Callable[..., Any]):
             temperatura_base = 16.0
 
         # Mantenemos tu compensación de + 4.0 grados
-        temperatura_compensada = temperatura_base + 4.0
+        temperatura_compensada = temperatura_base + 2.0
 
         # Lógica estricta de umbrales: menor a 18°C es frío, mayor a 25°C es calor
         if temperatura_compensada < 18.0:
