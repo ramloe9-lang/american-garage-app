@@ -36,6 +36,7 @@ COLUMNAS_REQUERIDAS: dict[str, list[str]] = {
         "Temperatura_Ideal",
         "Ingredientes_Clave",
         "Imagen",
+        "Descripcion", # <-- Agregado para exigir que exista la columna de descripción
     ],
     "Inventario_Insumos_Mermas": [
         "ID_Insumo",
@@ -109,14 +110,16 @@ def _a_dataframe(valores: list[list[str]]) -> pd.DataFrame:
             drop=True
         )
 
-    # Normalizar alias comunes de Temperatura_Ideal y la columna de Imagen
+    # Normalizar alias comunes de columnas (Temperatura, Imagen y Descripción)
     mapeo_columnas = {}
     for col in df.columns:
         col_clean = col.strip().lower().replace(" ", "_")
         if col_clean in ["temperatura_ideal", "temp_ideal", "temperatura"]:
             mapeo_columnas[col] = "Temperatura_Ideal"
-        elif col_clean in ["Imagen", "imagen_url", "imagenurl", "foto", "imagen_url"]:
+        elif col_clean in ["imagen", "imagen_url", "imagenurl", "foto"]:
             mapeo_columnas[col] = "imagenUrl"
+        elif col_clean in ["descripcion", "descripción", "descripcion_larga", "detalles", "ingredientes_clave"]:
+            mapeo_columnas[col] = "descripcion"
 
     if mapeo_columnas:
         df = df.rename(columns=mapeo_columnas)
@@ -133,6 +136,15 @@ def _a_dataframe(valores: list[list[str]]) -> pd.DataFrame:
     else:
         df["imagenUrl"] = df["imagenUrl"].astype(str).str.strip()
         df["imagenUrl"] = df["imagenUrl"].apply(
+            lambda x: None if x in ["", "none", "null", "nan", "undefined", "nat"] else x
+        )
+
+    # Garantizar que descripcion exista y limpie correctamente los espacios o nulos
+    if "descripcion" not in df.columns:
+        df["descripcion"] = None
+    else:
+        df["descripcion"] = df["descripcion"].astype(str).str.strip()
+        df["descripcion"] = df["descripcion"].apply(
             lambda x: None if x in ["", "none", "null", "nan", "undefined", "nat"] else x
         )
 
