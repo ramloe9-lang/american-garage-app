@@ -97,7 +97,7 @@ export function BotonOrdenarHeader({ productosDisponibles = [] }: BotonOrdenarHe
     mensaje += `\n*Total a pagar: $${totalGeneral.toFixed(2)}*`;
 
     // ⚠️ REEMPLAZA ESTE NÚMERO con el teléfono real del restaurante (ej: 521XXXXXXXXXX)
-    const telefonoRestaurante = "524425556530"; 
+    const telefonoRestaurante = "524425568390"; 
 
     // 4. Creamos el enlace oficial de WhatsApp con el texto codificado
     const urlWhatsapp = `https://wa.me/${telefonoRestaurante}?text=${encodeURIComponent(mensaje)}`;
