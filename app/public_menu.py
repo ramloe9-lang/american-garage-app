@@ -78,6 +78,20 @@ def crear_router_publico(obtener_menu_completo_func: Callable[..., Any]):
                 else:
                     data["imagenUrl"] = None
 
+                # --- EXTRACCIÓN BLINDADA DE LA DESCRIPCIÓN ---
+                desc_val = (
+                    data.get("descripcion")
+                    or data.get("Descripcion")
+                    or data.get("Descripción")
+                    or data.get("descripcion_larga")
+                    or data.get("detalles")
+                )
+
+                if desc_val and str(desc_val).strip() not in ["", "none", "null", "undefined"]:
+                    data["descripcion"] = str(desc_val).strip()
+                else:
+                    data["descripcion"] = None
+
                 # --- EXTRACCIÓN MULTICLAVE BLINDADA PARA TEMPERATURA ---
                 temp_raw = (
                     data.get("temperatura_ideal")
@@ -112,7 +126,7 @@ def crear_router_publico(obtener_menu_completo_func: Callable[..., Any]):
 
         response.headers["Cache-Control"] = "public, max-age=60"
 
-        # Devolvemos el clima con los umbrales correctos y el menú con imágenes listas
+        # Devolvemos el clima con los umbrales correctos y el menú con imágenes y descripciones listas
         return {
             "clima": {
                 "ciudad": "Querétaro",
