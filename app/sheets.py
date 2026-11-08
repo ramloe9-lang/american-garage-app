@@ -115,7 +115,7 @@ def _a_dataframe(valores: list[list[str]]) -> pd.DataFrame:
         col_clean = col.strip().lower().replace(" ", "_")
         if col_clean in ["temperatura_ideal", "temp_ideal", "temperatura"]:
             mapeo_columnas[col] = "Temperatura_Ideal"
-        elif col_clean in ["imagen", "imagen_url", "imagenurl", "foto", "imagen_url"]:
+        elif col_clean in ["Imagen", "imagen_url", "imagenurl", "foto", "imagen_url"]:
             mapeo_columnas[col] = "imagenUrl"
 
     if mapeo_columnas:
