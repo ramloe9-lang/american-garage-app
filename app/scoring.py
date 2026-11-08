@@ -61,6 +61,7 @@ class Producto:
     ingredientes: list[str] = field(default_factory=list)
     estado_stock: str = ""
     imagen: str | None = None
+    descripcion: str | None = None  # <--- Agregado aquí
 
 
 class IndiceInsumos:
@@ -123,12 +124,27 @@ def cargar_productos(tablas: dict[str, pd.DataFrame]) -> list[Producto]:
         nombre = str(r.get("Nombre_Producto", "")).strip()
         if not pid or not nombre:
             continue
+            
+        # Extracción segura de la descripción desde el diccionario de la fila
+        desc_val = (
+            r.get("descripcion") 
+            or r.get("Descripcion") 
+            or r.get("Descripción") 
+            or r.get("descripcion_larga")
+            or r.get("detalles")
+        )
+        descripcion_limpia = str(desc_val).strip() if desc_val and str(desc_val).strip().lower() not in ["", "none", "null", "undefined", "nan"] else None
+
         agregar(Producto(
-            id=pid, nombre=nombre, categoria=str(r.get("Categoria", "")).strip(),
-            precio=a_float(r.get("Precio_Venta")), costo=a_float(r.get("Costo_Estimado")),
+            id=pid, 
+            nombre=nombre, 
+            categoria=str(r.get("Categoria", "")).strip(),
+            precio=a_float(r.get("Precio_Venta")), 
+            costo=a_float(r.get("Costo_Estimado")),
             temperatura=_temperatura_ideal(r),
             ingredientes=separar_referencias(r.get("Ingredientes_Clave", "")),
             imagen=str(r.get("Imagen") or r.get("imagen") or r.get("imagenUrl") or "").strip() or None,
+            descripcion=descripcion_limpia,  # <--- Inyectado aquí al cargar el platillo
         ))
 
     for r in tablas["Inventario_Bebidas"].to_dict("records"):
@@ -136,12 +152,24 @@ def cargar_productos(tablas: dict[str, pd.DataFrame]) -> list[Producto]:
         nombre = str(r.get("Nombre_Producto", "")).strip()
         if not pid or not nombre:
             continue
+            
+        desc_val_bebida = (
+            r.get("descripcion") 
+            or r.get("Descripcion") 
+            or r.get("Descripción") 
+        )
+        desc_bebida_limpia = str(desc_val_bebida).strip() if desc_val_bebida and str(desc_val_bebida).strip().lower() not in ["", "none", "null", "undefined", "nan"] else None
+
         agregar(Producto(
-            id=pid, nombre=nombre, categoria=str(r.get("Categoria", "")).strip(),
-            precio=a_float(r.get("Precio_Venta")), costo=a_float(r.get("Precio_Costo")),
+            id=pid, 
+            nombre=nombre, 
+            categoria=str(r.get("Categoria", "")).strip(),
+            precio=a_float(r.get("Precio_Venta")), 
+            costo=a_float(r.get("Precio_Costo")),
             temperatura=_temperatura_ideal(r),
             estado_stock=normalizar(r.get("Estado_Stock", "")),
             imagen=str(r.get("Imagen") or r.get("imagen") or r.get("imagenUrl") or "").strip() or None,
+            descripcion=desc_bebida_limpia,  # <--- Inyectado aquí también para bebidas
         ))
     return productos
 
@@ -211,6 +239,7 @@ def evaluar_producto(p: Producto, indice: IndiceInsumos, temp_c: float | None) -
         prioridad_score=max(0, min(100, score)),
         temperatura_ideal=p.temperatura,
         imagenUrl=p.imagen,
+        descripcion=p.descripcion,  # <--- Pasado correctamente al esquema final de la API
     )
 
 
