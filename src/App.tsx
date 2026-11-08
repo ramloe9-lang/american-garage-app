@@ -6,11 +6,11 @@ import Header from './components/Header'
 import MenuSkeleton from './components/MenuSkeleton'
 import ProductList from './components/ProductList'
 import WeatherBanner from './components/WeatherBanner'
-import ProductModal from './components/ProductModal' // <-- 1. Importamos el componente del modal
+import ProductModal from './components/ProductModal'
 import { ErrorMenu } from './lib/api'
 import { GRUPOS } from './lib/categories'
 import { TEMAS, esIdealParaClima } from './lib/clima'
-import type { GrupoId, MenuItem } from './lib/types' // <-- Aseguramos MenuItem en los tipos
+import type { GrupoId, MenuItem } from './lib/types'
 import { useMenu } from './hooks/useMenu'
 
 /** PASO 5: esqueleto de carga y estados de error/vacío. */
@@ -20,7 +20,7 @@ export default function App() {
   const [soloClima, setSoloClima] = useState(false)
 
   // Estado para controlar qué producto se muestra en el modal al hacer clic
-  const [productoSeleccionado, setProductoSeleccionado] = useState<MenuItem | null>(null) // <-- 2. Estado del modal
+  const [productoSeleccionado, setProductoSeleccionado] = useState<MenuItem | null>(null)
 
   const clima = data?.clima ?? null
   // El filtro solo aplica si el clima actual tiene una recomendación (calor o fresco).
@@ -71,7 +71,8 @@ export default function App() {
 
   return (
     <div className="mx-auto min-h-dvh max-w-md relative">
-      <Header />
+      {/* Pasamos los productos del menú al Header para que el botón de ordenar funcione */}
+      <Header productosDisponibles={data?.items || []} />
 
       {isPending && <MenuSkeleton />}
 
@@ -148,7 +149,7 @@ export default function App() {
                   items={items} 
                   resaltar={filtroActivo} 
                   modoClima={clima?.modo}
-                  onSelectItem={(item) => setProductoSeleccionado(item)} // <-- 3. Conectamos la selección al modal
+                  onSelectItem={(item) => setProductoSeleccionado(item)}
                 />
               )}
             </AnimatePresence>
@@ -156,7 +157,7 @@ export default function App() {
         </>
       )}
 
-      {/* 4. Renderizamos el componente ProductModal al final */}
+      {/* Renderizamos el componente ProductModal al final */}
       <ProductModal
         item={productoSeleccionado}
         onClose={() => setProductoSeleccionado(null)}
