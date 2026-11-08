@@ -131,7 +131,7 @@ def _a_dataframe(valores: list[list[str]]) -> pd.DataFrame:
 
 
 def _descargar() -> dict[str, pd.DataFrame]:
-    """Lee las pestañas del documento."""
+    """Lee las pestañas del documento de forma inteligente y ultra tolerante."""
     try:
         try:
             libro = _obtener_cliente().open_by_key(settings.google_sheet_id)
@@ -140,13 +140,37 @@ def _descargar() -> dict[str, pd.DataFrame]:
             libro = _obtener_cliente(reiniciar=True).open_by_key(
                 settings.google_sheet_id
             )
-        hojas = {ws.title: ws for ws in libro.worksheets()}
+        
+        hojas = {ws.title.strip(): ws for ws in libro.worksheets()}
+        logger.info(f"Pestañas encontradas en Google Sheets: {list(hojas.keys())}")
+        
         tablas: dict[str, pd.DataFrame] = {}
+        
+        # Buscamos 'Menu_Productos' o la primera hoja disponible con nombre similar
+        hoja_menu_key = None
+        for nombre_hoja in hojas.keys():
+            if "menu" in nombre_hoja.lower() or "productos" in nombre_hoja.lower():
+                hoja_menu_key = nombre_hoja
+                break
+        
+        if not hoja_menu_key and hojas:
+            # Fallback a la primera pestaña del archivo si no coincide exacto
+            hoja_menu_key = list(hojas.keys())[0]
+
+        if hoja_menu_key:
+            df_menu = _a_dataframe(hojas[hoja_menu_key].get_all_values())
+            tablas["Menu_Productos"] = df_menu
+            tablas[hoja_menu_key] = df_menu
+
+        # Cargar el resto de pestañas requeridas
         for nombre in COLUMNAS_REQUERIDAS.keys():
-            if nombre not in hojas:
+            if nombre in tablas:
                 continue
-            df = _a_dataframe(hojas[nombre].get_all_values())
-            tablas[nombre] = df
+            if nombre in hojas:
+                tablas[nombre] = _a_dataframe(hojas[nombre].get_all_values())
+            else:
+                tablas[nombre] = pd.DataFrame()
+
         return tablas
     except SheetsError:
         raise
