@@ -125,7 +125,7 @@ function normalizarItem(raw: ApiItem): MenuItem {
   const insigniaCruda = get('insignia_sugerida', 'insignia')
   const insignia = typeof insigniaCruda === 'string' ? insigniaCruda.trim() : null
   const chefPorInsignia = insignia ? sinAcentos(insignia).includes('chef') : false
-  const imagen = get('Imagen_URL', 'imagen_url', 'imagen')
+  const imagen = get('imagenUrl', 'imagen_url', 'Imagen_URL', 'imagen')
 
   const rawInsignias = raw.insignias
   const insignias = Array.isArray(rawInsignias) ? (rawInsignias as string[]) : []
