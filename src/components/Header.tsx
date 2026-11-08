@@ -30,9 +30,15 @@ export default function Header({ productosDisponibles = [] }: HeaderProps) {
               <span className="llama" aria-hidden="true">🔥</span>
               Wings &amp; Burgers
             </p>
-            {mesa && (
-              <p className="rounded-md px-3 py-1 font-display text-xl font-bold text-hueso ring-1 ring-inset ring-ceniza/50">
+            
+            {/* Indicador de Mesa o Advertencia si no se ha escaneado el QR */}
+            {mesa ? (
+              <p className="rounded-md px-3 py-1 font-display text-lg font-bold text-yellow-400 bg-yellow-500/20 border border-yellow-500/30">
                 Mesa {mesa}
+              </p>
+            ) : (
+              <p className="rounded-md px-3 py-1 font-display text-xs font-bold text-red-400 bg-red-500/10 border border-red-500/20">
+                ⚠️ Escanea el QR de tu mesa
               </p>
             )}
           </div>
