@@ -16,6 +16,7 @@ class ItemMenu(BaseModel):
     prioridad_score: int = Field(ge=0, le=100)
     temperatura_ideal: str | None = Field(default=None, description="Temperatura ideal para el producto: frio, calor, o todos.")
     imagenUrl: str | None = Field(default=None, description="URL de la imagen del producto (mapeado desde la columna Imagen).")
+    descripcion: str | None = Field(default=None, description="Descripción detallada del producto.")
 
 
 class Kpi(BaseModel):
