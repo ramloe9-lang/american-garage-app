@@ -25,6 +25,7 @@ COLUMNAS_REQUERIDAS: dict[str, list[str]] = {
         "Precio_Costo",
         "Precio_Venta",
         "Temperatura_Ideal",
+        "Imagen",
     ],
     "Menu_Productos": [
         "ID_Producto",
@@ -34,6 +35,7 @@ COLUMNAS_REQUERIDAS: dict[str, list[str]] = {
         "Costo_Estimado",
         "Temperatura_Ideal",
         "Ingredientes_Clave",
+        "Imagen",
     ],
     "Inventario_Insumos_Mermas": [
         "ID_Insumo",
@@ -95,6 +97,7 @@ def _a_dataframe(valores: list[list[str]]) -> pd.DataFrame:
     """Matriz de celdas -> DataFrame (primera fila = encabezados; filas vacías descartadas)."""
     if not valores:
         return pd.DataFrame()
+    
     encabezado = [str(h).strip() for h in valores[0]]
     n = len(encabezado)
     filas = [(f + [""] * n)[:n] for f in valores[1:]]
@@ -129,7 +132,9 @@ def _a_dataframe(valores: list[list[str]]) -> pd.DataFrame:
         df["imagenUrl"] = None
     else:
         df["imagenUrl"] = df["imagenUrl"].astype(str).str.strip()
-        df["imagenUrl"] = df["imagenUrl"].apply(lambda x: None if x in ["", "none", "null", "nan", "undefined"] else x)
+        df["imagenUrl"] = df["imagenUrl"].apply(
+            lambda x: None if x in ["", "none", "null", "nan", "undefined", "nat"] else x
+        )
 
     return df
 
@@ -152,12 +157,11 @@ def _descargar() -> dict[str, pd.DataFrame]:
                     f"No existe la pestaña '{nombre}' en la hoja de cálculo."
                 )
             df = _a_dataframe(hojas[nombre].get_all_values())
-            # Nota: No bloqueamos si falta 'imagenUrl' en requeridas para no romper pestañas viejas, 
-            # pero el mapeo la incluirá si existe en la cabecera.
-            faltantes = [c for c in requeridas if c not in df.columns and c != "imagenUrl"]
+            
+            faltantes = [c for c in requeridas if c not in df.columns]
             if faltantes:
                 raise SheetsError(
-                    f"La pestaña '{nombre}' no tiene las columnas: {faltantes}"
+                    f"La pestaña '{nombre}' no tiene las columnas requeridas: {faltantes}"
                 )
             tablas[nombre] = df
         return tablas
