@@ -106,13 +106,13 @@ def _a_dataframe(valores: list[list[str]]) -> pd.DataFrame:
             drop=True
         )
 
-    # Normalizar alias comunes de Temperatura_Ideal y la columna de Imagen
+    # Normalizar alias comunes de Temperatura_Ideal y la columna de Imagen (CORREGIDO)
     mapeo_columnas = {}
     for col in df.columns:
         col_clean = col.strip().lower().replace(" ", "_")
         if col_clean in ["temperatura_ideal", "temp_ideal", "temperatura"]:
             mapeo_columnas[col] = "Temperatura_Ideal"
-        elif col_clean in ["imagen", "imagen_url", "imagenurl", "foto"]:
+        elif col_clean in ["imagen", "imagen_url", "imagenurl", "foto", "imagen_URL"]:
             mapeo_columnas[col] = "imagenUrl"
 
     if mapeo_columnas:
@@ -124,11 +124,12 @@ def _a_dataframe(valores: list[list[str]]) -> pd.DataFrame:
             df["Temperatura_Ideal"].astype(str).str.strip().str.lower()
         )
         
-    # Garantizar que imagenUrl exista aunque no esté la columna en el sheet (para evitar KeyError)
+    # Garantizar que imagenUrl exista y limpie correctamente los espacios o nulos
     if "imagenUrl" not in df.columns:
-        df["imagenUrl"] = ""
+        df["imagenUrl"] = None
     else:
         df["imagenUrl"] = df["imagenUrl"].astype(str).str.strip()
+        df["imagenUrl"] = df["imagenUrl"].apply(lambda x: None if x in ["", "none", "null", "nan", "undefined"] else x)
 
     return df
 
@@ -183,6 +184,9 @@ def obtener_dashboard() -> list[dict[str, str]]:
                     "metrica": str(celdas[0]).strip(),
                     "valor": str(celdas[1]).strip(),
                     "nota": str(celdas[2]).strip(),
+                }
+            )
+    return kpis
                 }
             )
     return kpis
