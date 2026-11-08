@@ -21,11 +21,13 @@ export default function ProductCard({
   indice,
   resaltar = false,
   modoClima,
+  onClick, // <-- 1. Recibimos la función para abrir el modal
 }: {
   item: MenuItem
   indice: number
   resaltar?: boolean
   modoClima?: ModoClima
+  onClick?: () => void // <-- 2. Tipo opcional para la acción de clic
 }) {
   const retraso = 0.25 + Math.min(indice, 8) * 0.05
   const enOferta = !item.agotado && (item.descuentoPct ?? 0) > 0
@@ -49,7 +51,10 @@ export default function ProductCard({
     <motion.li
       variants={entrada}
       custom={indice}
-      className={`flex gap-3 rounded-xl bg-asfalto p-3 ring-1 ${resaltar ? 'ring-oro/60' : 'ring-acero'}`}
+      onClick={onClick} // <-- 3. Evento click conectado
+      className={`group cursor-pointer flex gap-3 rounded-xl bg-asfalto p-3 ring-1 transition-all duration-200 hover:ring-oro/50 active:scale-[0.99] ${
+        resaltar ? 'ring-oro/60' : 'ring-acero'
+      }`}
     >
       <ProductVisual item={item} />
 
@@ -57,7 +62,7 @@ export default function ProductCard({
         <div className="flex items-start justify-between gap-3">
           <h3
             className={`font-display text-2xl font-extrabold leading-[1.05] ${
-              item.agotado ? 'text-ceniza' : 'text-hueso'
+              item.agotado ? 'text-ceniza' : 'text-hueso group-hover:text-oro transition-colors'
             }`}
           >
             {item.nombre}
