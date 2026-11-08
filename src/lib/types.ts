@@ -14,7 +14,7 @@ export interface ApiMenuResponse {
 }
 
 /** Modelo limpio que consume la interfaz (sin costos ni márgenes). */
-export type GrupoId = 'alitas' | 'hamburguesas' | 'entradas' | 'combos' | 'bebidas' | 'postres'
+export type GrupoId = 'alitas' | 'boneless' | 'hamburguesas' | 'hotdogs' | 'entradas' | 'combos' | 'bebidas' | 'postres'
 export type TempIdeal = 'frio' | 'caliente' | 'indiferente'
 export type ModoClima = 'calor' | 'frio' | 'templado'
 
