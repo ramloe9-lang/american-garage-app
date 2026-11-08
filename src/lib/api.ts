@@ -111,6 +111,10 @@ function normalizarItem(raw: ApiItem): MenuItem {
   const categoria = String(get('Categoria', 'categoria') ?? '').trim()
   const precioOriginal = aNumero(get('Precio_Venta', 'precio_original', 'precio')) ?? 0
   const id = String(get('ID_Producto', 'ID_Bebida', 'id') ?? nombreCrudo)
+  
+  // Lectura de la descripción del producto desde el Sheet
+  const descripcionVal = get('Descripcion', 'descripcion', 'descripcion_larga', 'description')
+  const descripcion = typeof descripcionVal === 'string' ? descripcionVal.trim() : undefined
 
   let precio = aNumero(get('precio_final'))
   const descuentoBackend = aNumero(get('descuento_aplicado', 'descuento'))
@@ -141,6 +145,7 @@ function normalizarItem(raw: ApiItem): MenuItem {
     grupo: grupoDe(categoria),
     precio,
     precioOriginal,
+    descripcion, // <-- Asignamos la descripción mediana leída del Sheet
     temperatura: normalizarTemperaturaIdeal(tempIdealVal),
     agotado: sinAcentos(String(get('Estado_Stock', 'estado_stock') ?? '')) === 'agotado',
     recomendado: aBooleano(get('recomendado')) || chefPorInsignia,
