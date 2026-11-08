@@ -6,10 +6,11 @@ import Header from './components/Header'
 import MenuSkeleton from './components/MenuSkeleton'
 import ProductList from './components/ProductList'
 import WeatherBanner from './components/WeatherBanner'
+import ProductModal from './components/ProductModal' // <-- 1. Importamos el componente del modal
 import { ErrorMenu } from './lib/api'
 import { GRUPOS } from './lib/categories'
 import { TEMAS, esIdealParaClima } from './lib/clima'
-import type { GrupoId } from './lib/types'
+import type { GrupoId, MenuItem } from './lib/types' // <-- Aseguramos MenuItem en los tipos
 import { useMenu } from './hooks/useMenu'
 
 /** PASO 5: esqueleto de carga y estados de error/vacío. */
@@ -17,6 +18,9 @@ export default function App() {
   const { data, isPending, error, refetch, isFetching } = useMenu()
   const [elegido, setElegido] = useState<GrupoId | null>(null)
   const [soloClima, setSoloClima] = useState(false)
+
+  // Estado para controlar qué producto se muestra en el modal al hacer clic
+  const [productoSeleccionado, setProductoSeleccionado] = useState<MenuItem | null>(null) // <-- 2. Estado del modal
 
   const clima = data?.clima ?? null
   // El filtro solo aplica si el clima actual tiene una recomendación (calor o fresco).
@@ -66,7 +70,7 @@ export default function App() {
   const reintentar = { texto: 'Reintentar', onClick: () => refetch(), ocupado: isFetching }
 
   return (
-    <div className="mx-auto min-h-dvh max-w-md">
+    <div className="mx-auto min-h-dvh max-w-md relative">
       <Header />
 
       {isPending && <MenuSkeleton />}
@@ -139,12 +143,24 @@ export default function App() {
 
             <AnimatePresence mode="wait">
               {activo && (
-                <ProductList key={`${activo}-${filtroActivo}`} items={items} resaltar={filtroActivo} modoClima={clima?.modo}/>
+                <ProductList 
+                  key={`${activo}-${filtroActivo}`} 
+                  items={items} 
+                  resaltar={filtroActivo} 
+                  modoClima={clima?.modo}
+                  onSelectItem={(item) => setProductoSeleccionado(item)} // <-- 3. Conectamos la selección al modal
+                />
               )}
             </AnimatePresence>
           </main>
         </>
       )}
+
+      {/* 4. Renderizamos el componente ProductModal al final */}
+      <ProductModal
+        item={productoSeleccionado}
+        onClose={() => setProductoSeleccionado(null)}
+      />
     </div>
   )
 }
