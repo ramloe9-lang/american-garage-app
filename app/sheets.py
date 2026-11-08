@@ -112,7 +112,7 @@ def _a_dataframe(valores: list[list[str]]) -> pd.DataFrame:
         col_clean = col.strip().lower().replace(" ", "_")
         if col_clean in ["temperatura_ideal", "temp_ideal", "temperatura"]:
             mapeo_columnas[col] = "Temperatura_Ideal"
-        elif col_clean in ["imagen", "imagen_url", "imagenurl"]:
+        elif col_clean in ["imagen", "imagen_url", "imagenurl", "foto"]:
             mapeo_columnas[col] = "imagenUrl"
 
     if mapeo_columnas:
@@ -123,6 +123,12 @@ def _a_dataframe(valores: list[list[str]]) -> pd.DataFrame:
         df["Temperatura_Ideal"] = (
             df["Temperatura_Ideal"].astype(str).str.strip().str.lower()
         )
+        
+    # Garantizar que imagenUrl exista aunque no esté la columna en el sheet (para evitar KeyError)
+    if "imagenUrl" not in df.columns:
+        df["imagenUrl"] = ""
+    else:
+        df["imagenUrl"] = df["imagenUrl"].astype(str).str.strip()
 
     return df
 
@@ -145,7 +151,9 @@ def _descargar() -> dict[str, pd.DataFrame]:
                     f"No existe la pestaña '{nombre}' en la hoja de cálculo."
                 )
             df = _a_dataframe(hojas[nombre].get_all_values())
-            faltantes = [c for c in requeridas if c not in df.columns]
+            # Nota: No bloqueamos si falta 'imagenUrl' en requeridas para no romper pestañas viejas, 
+            # pero el mapeo la incluirá si existe en la cabecera.
+            faltantes = [c for c in requeridas if c not in df.columns and c != "imagenUrl"]
             if faltantes:
                 raise SheetsError(
                     f"La pestaña '{nombre}' no tiene las columnas: {faltantes}"
