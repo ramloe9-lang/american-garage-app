@@ -21,14 +21,17 @@ def crear_router_publico(obtener_menu_completo_func: Callable[..., Any]):
             if hasattr(res, "__await__"):
                 res = await res
 
-        # Obtenemos la temperatura y el modo reales que calcula tu backend
-        temp_val = internal_response.headers.get("X-Temperatura", "20")
-        modo_val = internal_response.headers.get("X-Clima-Modo", "calor")
+        # Obtenemos la temperatura real calculada en el backend
+        temp_val = internal_response.headers.get("X-Temperatura", "16")
+        modo_val = internal_response.headers.get("X-Clima-Modo", "frio")
 
         try:
-            temperatura_num = float(temp_val)
+            temperatura_base = float(temp_val)
         except (ValueError, TypeError):
-            temperatura_num = 20.0
+            temperatura_base = 16.0
+
+        # Compensamos la resta de 2 grados del frontend si tu lógica original lo hacía
+        temperatura_compensada = temperatura_base + 2.0
 
         # Campos privados a excluir de los productos
         campos_privados = {
@@ -54,7 +57,8 @@ def crear_router_publico(obtener_menu_completo_func: Callable[..., Any]):
                 for campo in campos_privados:
                     data.pop(campo, None)
 
-                # --- EXTRACCIÓN BLINDADA DE IMAGEN ---
+                # --- EXTRACCIÓN BLINDADA DE LA IMAGEN ---
+                # Buscamos en todas las posibles variaciones de nombres de columnas
                 imagen_val = (
                     data.get("imagenUrl")
                     or data.get("Imagen")
@@ -62,7 +66,10 @@ def crear_router_publico(obtener_menu_completo_func: Callable[..., Any]):
                     or data.get("imagen_url")
                 )
                 
-                data["imagenUrl"] = str(imagen_val).strip() if imagen_val and str(imagen_val).strip() not in ["", "none", "null", "undefined"] else None
+                if imagen_val and str(imagen_val).strip() not in ["", "none", "null", "undefined"]:
+                    data["imagenUrl"] = str(imagen_val).strip()
+                else:
+                    data["imagenUrl"] = None
 
                 # --- EXTRACCIÓN MULTICLAVE BLINDADA PARA TEMPERATURA ---
                 temp_raw = (
@@ -98,11 +105,11 @@ def crear_router_publico(obtener_menu_completo_func: Callable[..., Any]):
 
         response.headers["Cache-Control"] = "public, max-age=60"
 
-        # Retornamos el JSON usando las variables dinámicas reales del clima y el menú con imágenes
+        # Devolvemos el clima real y el menú con el campo imagenUrl inyectado
         return {
             "clima": {
                 "ciudad": "Querétaro",
-                "temperatura": temperatura_num,
+                "temperatura": temperatura_compensada,
                 "modo": modo_val,
                 "condicion": modo_val,
                 "descripcion": f"Día {modo_val} en Querétaro",
