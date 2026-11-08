@@ -15,7 +15,7 @@ settings = get_settings()
 
 SCOPES = ["https://www.googleapis.com/auth/spreadsheets.readonly"]
 
-# Columnas mínimas (dejadas flexibles para evitar bloqueos)
+# Listas de pestañas
 COLUMNAS_REQUERIDAS: dict[str, list[str]] = {
     "Inventario_Bebidas": [],
     "Menu_Productos": [],
@@ -62,8 +62,13 @@ def _obtener_cliente(reiniciar: bool = False) -> gspread.Client:
         return _client
 
 
+def _limpiar_valor_texto(val: str) -> str | None:
+    v = str(val).strip()
+    return None if v.lower() in ["", "none", "null", "nan", "undefined", "nat"] else v
+
+
 def _a_dataframe(valores: list[list[str]]) -> pd.DataFrame:
-    """Matriz de celdas -> DataFrame (primera fila = encabezados; filas vacías descartadas)."""
+    """Matriz de celdas -> DataFrame con manejo ultra seguro de columnas."""
     if not valores:
         return pd.DataFrame()
     
@@ -78,39 +83,33 @@ def _a_dataframe(valores: list[list[str]]) -> pd.DataFrame:
             drop=True
         )
 
-    # Normalizar alias comunes de columnas (Temperatura, Imagen y Descripción)
-    mapeo_columnas = {}
+    # Buscar índices exactos de columnas sin renombrar duplicados
+    col_temp = None
+    col_img = None
+    col_desc = None
+
     for col in df.columns:
         col_clean = col.strip().lower().replace(" ", "_")
-        if col_clean in ["temperatura_ideal", "temp_ideal", "temperatura"]:
-            mapeo_columnas[col] = "Temperatura_Ideal"
-        elif col_clean in ["imagen", "imagen_url", "imagenurl", "foto"]:
-            mapeo_columnas[col] = "imagenUrl"
-        elif col_clean in ["descripcion", "descripción", "descripcion_larga", "detalles", "ingredientes_clave"]:
-            mapeo_columnas[col] = "descripcion"
+        if col_clean in ["temperatura_ideal", "temp_ideal", "temperatura"] and not col_temp:
+            col_temp = col
+        elif col_clean in ["imagen", "imagen_url", "imagenurl", "foto"] and not col_img:
+            col_img = col
+        elif col_clean in ["descripcion", "descripción", "descripcion_larga", "detalles"] and not col_desc:
+            col_desc = col
 
-    if mapeo_columnas:
-        df = df.rename(columns=mapeo_columnas)
-
-    # Limpieza segura columna por columna asegurando que sean Series
-    if "Temperatura_Ideal" in df.columns:
-        df["Temperatura_Ideal"] = df["Temperatura_Ideal"].astype(str).str.strip().str.lower()
+    # Construir las columnas estandarizadas de forma segura
+    if col_temp and col_temp in df.columns:
+        df["Temperatura_Ideal"] = df[col_temp].astype(str).apply(lambda x: str(x).strip().lower())
     else:
         df["Temperatura_Ideal"] = "indiferente"
 
-    if "imagenUrl" in df.columns:
-        df["imagenUrl"] = df["imagenUrl"].astype(str).str.strip()
-        df["imagenUrl"] = df["imagenUrl"].apply(
-            lambda x: None if x in ["", "none", "null", "nan", "undefined", "nat"] else x
-        )
+    if col_img and col_img in df.columns:
+        df["imagenUrl"] = df[col_img].astype(str).apply(_limpiar_valor_texto)
     else:
         df["imagenUrl"] = None
 
-    if "descripcion" in df.columns:
-        df["descripcion"] = df["descripcion"].astype(str).str.strip()
-        df["descripcion"] = df["descripcion"].apply(
-            lambda x: None if x in ["", "none", "null", "nan", "undefined", "nat"] else x
-        )
+    if col_desc and col_desc in df.columns:
+        df["descripcion"] = df[col_desc].astype(str).apply(_limpiar_valor_texto)
     else:
         df["descripcion"] = None
 
