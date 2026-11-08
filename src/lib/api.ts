@@ -123,7 +123,8 @@ function normalizarItem(raw: ApiItem): MenuItem {
     'ingredientes',
     'detalles'
   )
-  const descripcion = descripcionRaw ? String(descripcionRaw).trim() : undefined
+  const descripcionClean = descripcionRaw ? String(descripcionRaw).trim() : null
+  const descripcion = descripcionClean && descripcionClean.toLowerCase() !== 'none' ? descripcionClean : null
 
   let precio = aNumero(get('precio_final'))
   const descuentoBackend = aNumero(get('descuento_aplicado', 'descuento'))
@@ -154,7 +155,7 @@ function normalizarItem(raw: ApiItem): MenuItem {
     grupo: grupoDe(categoria),
     precio,
     precioOriginal,
-    descripcion, // <-- Asignamos la descripción procesada
+    descripcion, // <-- Asignamos la descripción procesada y limpia
     temperatura: normalizarTemperaturaIdeal(tempIdealVal),
     agotado: sinAcentos(String(get('Estado_Stock', 'estado_stock') ?? '')) === 'agotado',
     recomendado: aBooleano(get('recomendado')) || chefPorInsignia,
@@ -182,49 +183,4 @@ function conInsigniasDemo(items: MenuItem[]): MenuItem[] {
 
 const TEMP_DEMO: Record<string, number> = { calor: 31, frio: 12, templado: 21 }
 function conClimaDemo(base: Clima | null): Clima | null {
-  const modo = import.meta.env.VITE_DEMO_CLIMA as ModoClima | undefined
-  if (!modo || !(modo in TEMP_DEMO)) return base
-  return {
-    ciudad: base?.ciudad ?? 'Querétaro',
-    temperatura: TEMP_DEMO[modo],
-    modo,
-    descripcion: modo === 'frio' ? 'Día fresco' : modo === 'calor' ? 'Día caluroso' : 'Clima templado',
-  }
-}
-
-export async function fetchMenu(signal?: AbortSignal): Promise<Menu> {
-  let res: Response
-  try {
-    res = await fetch(`${BASE_URL}${MENU_PATH}`, { signal })
-  } catch (e) {
-    if (e instanceof DOMException && e.name === 'AbortError') throw e
-    throw new ErrorMenu('red', 'No hay conexión con el servidor del menú.')
-  }
-  if (!res.ok) throw new ErrorMenu('servidor', `El servidor respondió con error ${res.status}.`)
-
-  let data: ApiMenuResponse | ApiItem[]
-  try {
-    data = (await res.json()) as ApiMenuResponse | ApiItem[]
-  } catch {
-    throw new ErrorMenu('servidor', 'La respuesta del servidor no es válida.')
-  }
-
-  const lista = Array.isArray(data) ? data : (data.menu ?? [])
-  const climaBackend = Array.isArray(data) ? null : data.clima
-  let items = lista.map(normalizarItem)
-
-  if (import.meta.env.DEV && import.meta.env.VITE_DEMO_BADGES === 'true') items = conInsigniasDemo(items)
-
-  // 1. Usar clima del backend si existe
-  let climaFinal = normalizarClima(climaBackend)
-
-  // 2. Si el backend no envía clima, obtenerlo en vivo de la API de Querétaro
-  if (!climaFinal && !import.meta.env.VITE_DEMO_CLIMA) {
-    climaFinal = await obtenerClimaEnTiempoReal('Queretaro')
-  }
-
-  // 3. Forzar simulación solo si VITE_DEMO_CLIMA está activo en .env
-  climaFinal = conClimaDemo(climaFinal)
-
-  return { clima: climaFinal, items }
-}
+  const modo = import.meta.env.VITE_DEMO_CLIMA
