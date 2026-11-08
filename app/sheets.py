@@ -120,9 +120,12 @@ def _a_dataframe(valores: list[list[str]]) -> pd.DataFrame:
         df["imagenUrl"] = None
 
     if col_desc and col_desc in df.columns:
-        df["descripcion"] = df[col_desc].astype(str).apply(_limpiar_valor_texto)
+        desc_limpia = df[col_desc].astype(str).apply(_limpiar_valor_texto)
+        df["descripcion"] = desc_limpia
+        df["Descripcion"] = desc_limpia
     else:
         df["descripcion"] = None
+        df["Descripcion"] = None
 
     return df
 
