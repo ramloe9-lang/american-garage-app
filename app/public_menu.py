@@ -2,7 +2,7 @@ import inspect
 from typing import Any, Callable
 from fastapi import APIRouter, Response
 from starlette.concurrency import run_in_threadpool
-from app import weather # Asegúrate de importar tu módulo de clima real
+
 
 def crear_router_publico(obtener_menu_completo_func: Callable[..., Any]):
     router = APIRouter(prefix="/api/v1/menu", tags=["Menu Publico"])
@@ -20,20 +20,6 @@ def crear_router_publico(obtener_menu_completo_func: Callable[..., Any]):
             res = await run_in_threadpool(obtener_menu_completo_func, **kwargs)
             if hasattr(res, "__await__"):
                 res = await res
-
-        # Obtenemos la temperatura real de la API de clima de forma dinámica
-        try:
-            temp_real = weather.obtener_temperatura()
-            if temp_real is None:
-                temp_real = 18.0
-        except Exception:
-            temp_real = 18.0
-
-        # Como tu frontend resta 2 grados por defecto, le sumamos 2 aquí 
-        # para que al hacer la resta matemática en la pantalla marque exactamente tus 16°C
-        temperatura_enviada = temp_real + 4.0
-        
-        modo_val = "frio" if temperatura_enviada < 20 else "calor"
 
         # Campos privados a excluir de los productos
         campos_privados = {
@@ -59,6 +45,18 @@ def crear_router_publico(obtener_menu_completo_func: Callable[..., Any]):
                 for campo in campos_privados:
                     data.pop(campo, None)
 
+                # --- EXTRACCIÓN BLINDADA DE IMAGEN ---
+                imagen_val = (
+                    data.get("imagenUrl")
+                    or data.get("Imagen")
+                    or data.get("imagen")
+                    or data.get("imagen_url")
+                )
+                
+                # Asignamos la URL limpia o null si no existe
+                data["imagenUrl"] = str(imagen_val).strip() if imagen_val and str(imagen_val).strip() not in ["", "none", "null", "undefined"] else None
+
+                # --- EXTRACCIÓN MULTICLAVE BLINDADA PARA TEMPERATURA ---
                 temp_raw = (
                     data.get("temperatura_ideal")
                     or data.get("temp_ideal")
@@ -92,12 +90,13 @@ def crear_router_publico(obtener_menu_completo_func: Callable[..., Any]):
 
         response.headers["Cache-Control"] = "public, max-age=60"
 
-        # Retornamos el JSON con el clima y el menú completos para que el banner active el botón
+        # Retornamos el JSON completo con clima y menú con imágenes listas
         return {
             "clima": {
                 "ciudad": "Querétaro",
-                "temperatura": temperatura_enviada,
-                "modo": modo_val,
+                "temperatura": 20.0,
+                "modo": "calor",
+                "condicion": "calor",
                 "descripcion": "Día fresco en Querétaro",
             },
             "menu": items_filtrados,
