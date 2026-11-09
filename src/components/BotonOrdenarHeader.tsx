@@ -296,3 +296,30 @@ export function BotonOrdenarHeader({ productosDisponibles = [] }: BotonOrdenarHe
                 <span className="text-yellow-400">${totalGeneral.toFixed(2)}</span>
               </div>
               <p className="text-[11px] text-neutral-400 mt-0.5">
+                Pago seleccionado: <span className="text-white font-semibold">{metodoPago}</span>
+              </p>
+            </div>
+
+            <div className="flex gap-2">
+              <button 
+                onClick={() => {
+                  setMostrarResumen(false);
+                  setMostrarCatalogo(true);
+                }}
+                className="w-1/2 bg-neutral-800 hover:bg-neutral-700 text-white font-bold py-2.5 rounded-xl text-xs transition-colors"
+              >
+                Seguir pidiendo
+              </button>
+              <button 
+                onClick={enviarOrden}
+                className="w-1/2 bg-green-600 hover:bg-green-500 text-white font-bold py-2.5 rounded-xl text-xs transition-colors shadow-lg"
+              >
+                Enviar a cocina 🚀
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
