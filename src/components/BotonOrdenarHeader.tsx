@@ -38,6 +38,9 @@ export function BotonOrdenarHeader({ productosDisponibles = [] }: BotonOrdenarHe
   const [cantidad, setCantidad] = useState<number>(1);
   const [comentarios, setComentarios] = useState<string>('');
   
+  // Estado para el método de pago seleccionado
+  const [metodoPago, setMetodoPago] = useState<string>('Efectivo');
+  
   // Carrito de compras persistente en el celular del cliente
   const [carrito, setCarrito] = useState<ItemCarrito[]>(() => {
     const saved = localStorage.getItem('carrito_pedidos');
@@ -81,31 +84,7 @@ export function BotonOrdenarHeader({ productosDisponibles = [] }: BotonOrdenarHe
 
   const enviarOrden = () => {
     if (carrito.length === 0) return;
-
-    // 1. Armamos el encabezado del mensaje con la mesa actual
-    let mensaje = `🔥 *NUEVO PEDIDO - MESA ${mesa}* 🔥\n\n`;
-
-    // 2. Recorremos los productos del carrito para listarlos
-    carrito.forEach((item, index) => {
-      mensaje += `${index + 1}. *${item.cantidad}x* ${item.nombre} ($${item.subtotal.toFixed(2)})\n`;
-      if (item.comentarios) {
-        mensaje += `   _Nota: ${item.comentarios}_\n`;
-      }
-    });
-
-    // 3. Agregamos el total general
-    mensaje += `\n*Total a pagar: $${totalGeneral.toFixed(2)}*`;
-
-    // ⚠️ REEMPLAZA ESTE NÚMERO con el teléfono real del restaurante (ej: 521XXXXXXXXXX)
-    const telefonoRestaurante = "524425568390"; 
-
-    // 4. Creamos el enlace oficial de WhatsApp con el texto codificado
-    const urlWhatsapp = `https://wa.me/${telefonoRestaurante}?text=${encodeURIComponent(mensaje)}`;
-
-    // 5. Abrimos WhatsApp en una nueva pestaña / app móvil
-    window.open(urlWhatsapp, '_blank');
-
-    // 6. Limpiamos el carrito y cerramos los modales
+    alert(`¡Orden enviada con éxito para la Mesa ${mesa}!\nTotal: $${totalGeneral.toFixed(2)}\nMétodo de pago: ${metodoPago}\n\nEn breve la cocina comenzará a prepararla.`);
     setCarrito([]);
     localStorage.removeItem('carrito_pedidos');
     setMostrarResumen(false);
@@ -117,7 +96,7 @@ export function BotonOrdenarHeader({ productosDisponibles = [] }: BotonOrdenarHe
       {/* BOTÓN EN LA CABECERA */}
       <div className="flex items-center gap-2">
         {mesa && (
-          <span className="text-xs bg-yellow-500/25 text-yellow-400 border border-yellow-500/30 font-bold px-2.5 py-1 rounded-full">
+          <span className="text-xs bg-yellow-500/20 text-yellow-400 border border-yellow-500/30 font-bold px-2.5 py-1 rounded-full">
             Mesa {mesa}
           </span>
         )}
@@ -184,7 +163,10 @@ export function BotonOrdenarHeader({ productosDisponibles = [] }: BotonOrdenarHe
             {/* BOTÓN PARA VER EL CARRITO ACUMULADO */}
             {carrito.length > 0 && (
               <button 
-                onClick={() => setMostrarResumen(true)}
+                onClick={() => {
+                  setMostrarCatalogo(false);
+                  setMostrarResumen(true);
+                }}
                 className="w-full bg-green-600 hover:bg-green-500 text-white font-bold py-3 rounded-xl text-sm transition-colors shadow-lg flex justify-between px-4 items-center"
               >
                 <span>Ver mi orden (${totalGeneral.toFixed(2)})</span>
@@ -265,7 +247,7 @@ export function BotonOrdenarHeader({ productosDisponibles = [] }: BotonOrdenarHe
               </button>
             </div>
 
-            <div className="space-y-3 overflow-y-auto pr-1 flex-1 mb-4">
+            <div className="space-y-3 overflow-y-auto pr-1 flex-1 mb-3">
               {carrito.map((item, index) => (
                 <div key={index} className="bg-neutral-800/80 p-3 rounded-xl border border-neutral-700/50 flex justify-between items-start">
                   <div>
@@ -285,30 +267,32 @@ export function BotonOrdenarHeader({ productosDisponibles = [] }: BotonOrdenarHe
               ))}
             </div>
 
+            {/* SECCIÓN DE MÉTODO DE PAGO (Efectivo o Tarjeta Terminal) */}
+            <div className="bg-neutral-800/50 border border-neutral-700/50 p-3 rounded-xl mb-3">
+              <label className="block text-xs font-bold text-gray-300 mb-2">
+                💳 Método de pago preferido:
+              </label>
+              <div className="grid grid-cols-2 gap-2">
+                {['Efectivo', 'Tarjeta (Terminal)'].map((metodo) => (
+                  <button
+                    key={metodo}
+                    type="button"
+                    onClick={() => setMetodoPago(metodo)}
+                    className={`py-2 px-1 text-xs font-bold rounded-lg border transition-all ${
+                      metodoPago === metodo
+                        ? 'bg-yellow-500 text-neutral-950 border-yellow-400 shadow-md'
+                        : 'bg-neutral-800 text-neutral-400 border-neutral-700 hover:border-neutral-600'
+                    }`}
+                  >
+                    {metodo}
+                  </button>
+                ))}
+              </div>
+            </div>
+
             <div className="border-t border-neutral-800 pt-3 mb-4">
               <div className="flex justify-between text-white font-bold text-base">
                 <span>Total a pagar:</span>
                 <span className="text-yellow-400">${totalGeneral.toFixed(2)}</span>
               </div>
-            </div>
-
-            <div className="flex gap-2">
-              <button 
-                onClick={() => setMostrarResumen(false)}
-                className="w-1/2 bg-neutral-800 hover:bg-neutral-700 text-white font-bold py-2.5 rounded-xl text-xs transition-colors"
-              >
-                Seguir pidiendo
-              </button>
-              <button 
-                onClick={enviarOrden}
-                className="w-1/2 bg-green-600 hover:bg-green-500 text-white font-bold py-2.5 rounded-xl text-xs transition-colors shadow-lg"
-              >
-                Enviar a cocina 🚀
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-    </>
-  );
-}
+              <p className="text-[11px] text-neutral-400 mt-0.5">
