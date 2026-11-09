@@ -84,7 +84,32 @@ export function BotonOrdenarHeader({ productosDisponibles = [] }: BotonOrdenarHe
 
   const enviarOrden = () => {
     if (carrito.length === 0) return;
-    alert(`¡Orden enviada con éxito para la Mesa ${mesa}!\nTotal: $${totalGeneral.toFixed(2)}\nMétodo de pago: ${metodoPago}\n\nEn breve la cocina comenzará a prepararla.`);
+
+    // 1. Armamos el encabezado del mensaje con la mesa actual
+    let mensaje = `🔥 *NUEVO PEDIDO - MESA ${mesa}* 🔥\n\n`;
+
+    // 2. Recorremos los productos del carrito para listarlos
+    carrito.forEach((item, index) => {
+      mensaje += `${index + 1}. *${item.cantidad}x* ${item.nombre} ($${item.subtotal.toFixed(2)})\n`;
+      if (item.comentarios) {
+        mensaje += `   _Nota: ${item.comentarios}_\n`;
+      }
+    });
+
+    // 3. Agregamos el método de pago elegido y el total general
+    mensaje += `\n💳 *Método de pago:* ${metodoPago}`;
+    mensaje += `\n*Total a pagar: $${totalGeneral.toFixed(2)}*`;
+
+    // ⚠️ Número de WhatsApp del restaurante (ejemplo: código de país + número)
+    const telefonoRestaurante = "524425568390"; 
+
+    // 4. Creamos el enlace oficial de WhatsApp con el texto codificado
+    const urlWhatsapp = `https://wa.me/${telefonoRestaurante}?text=${encodeURIComponent(mensaje)}`;
+
+    // 5. Abrimos WhatsApp en una nueva pestaña / app móvil
+    window.open(urlWhatsapp, '_blank');
+
+    // 6. Limpiamos el carrito y cerramos los modales
     setCarrito([]);
     localStorage.removeItem('carrito_pedidos');
     setMostrarResumen(false);
@@ -95,25 +120,15 @@ export function BotonOrdenarHeader({ productosDisponibles = [] }: BotonOrdenarHe
     <>
       {/* BOTÓN EN LA CABECERA */}
       <div className="flex items-center gap-2">
-        {mesa && (
-          <span className="text-xs bg-yellow-500/20 text-yellow-400 border border-yellow-500/30 font-bold px-2.5 py-1 rounded-full">
-            Mesa {mesa}
-          </span>
-        )}
-
         <button 
           onClick={() => {
             if (!mesa) {
-              alert("Para hacer un pedido en autoservicio, debes escanear el código QR impreso en tu mesa.");
+              alert("⚠️ Para poder ordenar, debes escanear el código QR impreso en tu mesa.");
               return;
             }
             setMostrarCatalogo(true);
           }}
-          className={`${
-            mesa 
-              ? 'bg-green-600 hover:bg-green-500 text-white shadow-lg' 
-              : 'bg-neutral-700 text-neutral-400 cursor-not-allowed'
-          } text-xs font-bold px-3 py-1.5 rounded-full transition-transform active:scale-95 flex items-center gap-1.5`}
+          className="bg-green-600 hover:bg-green-500 text-white text-xs font-bold px-3 py-1.5 rounded-full transition-transform active:scale-95 flex items-center gap-1.5 shadow-lg"
         >
           🛒 Ordenar ya {carrito.length > 0 && `(${carrito.length})`}
         </button>
@@ -267,7 +282,7 @@ export function BotonOrdenarHeader({ productosDisponibles = [] }: BotonOrdenarHe
               ))}
             </div>
 
-            {/* SECCIÓN DE MÉTODO DE PAGO (Efectivo o Tarjeta Terminal) */}
+            {/* SECCIÓN DE MÉTODO DE PAGO */}
             <div className="bg-neutral-800/50 border border-neutral-700/50 p-3 rounded-xl mb-3">
               <label className="block text-xs font-bold text-gray-300 mb-2">
                 💳 Método de pago preferido:
@@ -314,7 +329,7 @@ export function BotonOrdenarHeader({ productosDisponibles = [] }: BotonOrdenarHe
                 onClick={enviarOrden}
                 className="w-1/2 bg-green-600 hover:bg-green-500 text-white font-bold py-2.5 rounded-xl text-xs transition-colors shadow-lg"
               >
-                Enviar a cocina 🚀
+                Enviar a WhatsApp 🚀
               </button>
             </div>
           </div>
