@@ -24,7 +24,7 @@ app = FastAPI(title="Dynamic Menu & Margin Guard", version="1.0.0")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[o.strip() for o in settings.cors_origins.split(",") if o.strip()],
-    allow_methods=["GET", "POST", "PATCH", "OPTIONS"],
+    allow_methods=["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=["*"],
     expose_headers=["X-Temperatura", "X-Clima-Modo"],
 )
