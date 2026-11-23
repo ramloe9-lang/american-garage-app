@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import { AnimatePresence } from 'motion/react'
 import CategoryTabs from './components/CategoryTabs'
+import CocinaView from './components/CocinaView'
 import EstadoMensaje from './components/EstadoMensaje'
 import Header from './components/Header'
 import MenuSkeleton from './components/MenuSkeleton'
@@ -15,18 +16,28 @@ import { useMenu } from './hooks/useMenu'
 
 /** PASO 5: esqueleto de carga y estados de error/vacío. */
 export default function App() {
-  const { data, isPending, error, refetch, isFetching } = useMenu()
+  const esVistaCocina = useMemo(() => {
+    if (typeof window === 'undefined') return false
+    const path = window.location.pathname.replace(/\/+$/, '') || '/'
+    return path === '/cocina'
+  }, [])
+
+  const { data, isPending, error, refetch, isFetching } = useMenu(!esVistaCocina ? undefined : undefined)
   const [elegido, setElegido] = useState<GrupoId | null>(null)
   const [soloClima, setSoloClima] = useState(false)
 
   // Estado para controlar qué producto se muestra en el modal al hacer clic
   const [productoSeleccionado, setProductoSeleccionado] = useState<MenuItem | null>(null)
 
+  if (esVistaCocina) {
+    return <CocinaView />
+  }
+
   const clima = data?.clima ?? null
   // El filtro solo aplica si el clima actual tiene una recomendación (calor o fresco).
   const filtroActivo = soloClima && clima !== null && TEMAS[clima.modo].chip !== null
 
-  // Productos visibles: todo el menú o solo lo ideal para el clima de hoy, 
+  // Productos visibles: todo el menú o solo lo ideal para el clima de hoy,
   // ORDENADOS dinámicamente para que las opciones acorde al clima aparezcan primero.
   const visibles = useMemo(() => {
     if (!data) return []
@@ -61,8 +72,8 @@ export default function App() {
   }, [visibles])
 
   // Si la pestaña elegida tiene elementos, se respeta; si no, cae en la primera disponible que tenga conteo.
-  const activo = (elegido && conteos[elegido] && conteos[elegido]! > 0) 
-    ? elegido 
+  const activo = (elegido && conteos[elegido] && conteos[elegido]! > 0)
+    ? elegido
     : GRUPOS.find((g) => (conteos[g.id] ?? 0) > 0)?.id ?? null
 
   const items = visibles.filter((i) => i.grupo === activo)
@@ -144,10 +155,10 @@ export default function App() {
 
             <AnimatePresence mode="wait">
               {activo && (
-                <ProductList 
-                  key={`${activo}-${filtroActivo}`} 
-                  items={items} 
-                  resaltar={filtroActivo} 
+                <ProductList
+                  key={`${activo}-${filtroActivo}`}
+                  items={items}
+                  resaltar={filtroActivo}
                   modoClima={clima?.modo}
                   onSelectItem={(item) => setProductoSeleccionado(item)}
                 />
