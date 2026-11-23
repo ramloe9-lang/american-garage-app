@@ -403,4 +403,229 @@ export function BotonOrdenarHeader({ productosDisponibles = [] }: BotonOrdenarHe
                   className="w-full bg-green-600 hover:bg-green-500 text-white font-bold py-2.5 rounded-xl text-xs transition-colors shadow-lg flex justify-between px-4 items-center"
                 >
                   <span>Ver cuenta / Finalizar cuenta</span>
-                  <span className="bg-white/20 px-
+                  <span className="bg-white/20 px-2 py-0.5 rounded-full text-xs">
+                    ${totalGeneralCuenta.toFixed(2)}
+                  </span>
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* MODAL 2: DETALLE, CANTIDAD Y COMENTARIOS */}
+      {productoSeleccionado && (
+        <div className="fixed inset-0 bg-black/90 backdrop-blur-sm z-[60] flex justify-center items-center p-4">
+          <div className="bg-neutral-900 border border-neutral-800 w-full max-w-md rounded-2xl p-5 relative shadow-2xl">
+            <button
+              type="button"
+              onClick={() => setProductoSeleccionado(null)}
+              className="absolute top-4 right-4 text-neutral-400 hover:text-white text-xl font-bold"
+            >
+              ✕
+            </button>
+
+            <h3 className="text-base font-bold text-white mb-1">{productoSeleccionado.nombre}</h3>
+            <p className="text-xs text-yellow-400 font-semibold mb-4">
+              Precio unitario: ${obtenerPrecio(productoSeleccionado).toFixed(2)}
+            </p>
+
+            {/* Ajustar Cantidad */}
+            <div className="flex items-center justify-between mb-4 bg-neutral-800 p-3 rounded-xl border border-neutral-700/50">
+              <span className="text-sm font-medium text-gray-200">Cantidad:</span>
+              <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => setCantidad(Math.max(1, cantidad - 1))}
+                  className="w-8 h-8 bg-neutral-700 rounded-lg font-bold text-white hover:bg-neutral-600 text-base"
+                >
+                  -
+                </button>
+                <span className="font-bold text-white text-base">{cantidad}</span>
+                <button
+                  type="button"
+                  onClick={() => setCantidad(cantidad + 1)}
+                  className="w-8 h-8 bg-neutral-700 rounded-lg font-bold text-white hover:bg-neutral-600 text-base"
+                >
+                  +
+                </button>
+              </div>
+            </div>
+
+            {/* Comentarios / Notas especiales */}
+            <div className="mb-5">
+              <label className="block text-xs font-medium text-gray-300 mb-1.5">
+                Notas especiales (ej. sin cebolla, aderezo extra...):
+              </label>
+              <textarea
+                value={comentarios}
+                onChange={(e) => setComentarios(e.target.value)}
+                placeholder="Escribe aquí tus especificaciones..."
+                className="w-full bg-neutral-800 border border-neutral-700 rounded-xl p-3 text-xs text-white focus:outline-none focus:border-yellow-500 resize-none h-20"
+              />
+            </div>
+
+            {/* Botón Confirmar */}
+            <button
+              type="button"
+              onClick={agregarAlCarrito}
+              className="w-full bg-yellow-500 hover:bg-yellow-400 text-neutral-950 font-bold py-2.5 rounded-xl text-sm transition-colors shadow-lg"
+            >
+              Añadir a la orden (${(obtenerPrecio(productoSeleccionado) * cantidad).toFixed(2)})
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL 3: RESUMEN COMPLETO Y FINALIZAR CUENTA */}
+      {mostrarResumen && (
+        <div className="fixed inset-0 bg-black/90 backdrop-blur-sm z-[70] flex justify-center items-center p-4">
+          <div className="bg-neutral-900 border border-neutral-800 w-full max-w-md rounded-2xl p-5 max-h-[85vh] flex flex-col relative shadow-2xl">
+            <div className="flex justify-between items-center mb-3 pb-2 border-b border-neutral-800">
+              <h2 className="text-lg font-bold text-yellow-400">Cuenta de la Mesa {mesa}</h2>
+              <button
+                type="button"
+                onClick={() => setMostrarResumen(false)}
+                className="text-neutral-400 hover:text-white text-xl font-bold p-1"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="space-y-3 overflow-y-auto pr-1 flex-1 mb-3">
+              {/* Rondas ya confirmadas */}
+              {rondasConfirmadas.map((ronda) => (
+                <div
+                  key={ronda.numeroRonda}
+                  className="bg-neutral-800/40 p-3 rounded-xl border border-neutral-700/40 space-y-2"
+                >
+                  <div className="flex justify-between items-center">
+                    <span className="text-xs font-bold text-green-400">
+                      ✓ Ronda #{ronda.numeroRonda} confirmada
+                    </span>
+                    <span className="text-xs font-bold text-neutral-300">
+                      ${ronda.subtotalRonda.toFixed(2)}
+                    </span>
+                  </div>
+                  {ronda.items.map((item, idx) => (
+                    <div key={idx} className="text-xs text-neutral-200 flex justify-between">
+                      <span>
+                        {item.cantidad}x {item.nombre}
+                        {item.comentarios ? ` (${item.comentarios})` : ''}
+                      </span>
+                      <span className="text-neutral-400">${item.subtotal.toFixed(2)}</span>
+                    </div>
+                  ))}
+                </div>
+              ))}
+
+              {/* Ítems actuales aún sin confirmar */}
+              {carrito.map((item, index) => (
+                <div
+                  key={index}
+                  className="bg-neutral-800/80 p-3 rounded-xl border border-yellow-500/30 flex justify-between items-start"
+                >
+                  <div>
+                    <span className="text-[10px] uppercase font-bold text-yellow-400 block mb-0.5">
+                      Por confirmar
+                    </span>
+                    <p className="font-bold text-white text-sm">
+                      {item.cantidad}x {item.nombre}
+                    </p>
+                    {item.comentarios && (
+                      <p className="text-xs text-neutral-400 italic mt-0.5">Nota: {item.comentarios}</p>
+                    )}
+                    <p className="text-xs text-yellow-400 font-bold mt-1">${item.subtotal.toFixed(2)}</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => eliminarDelCarrito(index)}
+                    className="text-red-400 hover:text-red-300 text-xs font-bold px-2 py-1 bg-red-500/10 rounded-lg"
+                  >
+                    Quitar
+                  </button>
+                </div>
+              ))}
+            </div>
+
+            {/* SECCIÓN DE MÉTODO DE PAGO PARA FINALIZAR CUENTA */}
+            <div className="bg-neutral-800/50 border border-neutral-700/50 p-3 rounded-xl mb-3">
+              <label className="block text-xs font-bold text-gray-300 mb-2">
+                💳 Método de pago para finalizar cuenta:
+              </label>
+              <div className="grid grid-cols-2 gap-2">
+                {['Efectivo', 'Tarjeta (Terminal)'].map((metodo) => (
+                  <button
+                    key={metodo}
+                    type="button"
+                    onClick={() => setMetodoPago(metodo)}
+                    className={`py-2 px-1 text-xs font-bold rounded-lg border transition-all ${
+                      metodoPago === metodo
+                        ? 'bg-yellow-500 text-neutral-950 border-yellow-400 shadow-md'
+                        : 'bg-neutral-800 text-neutral-400 border-neutral-700 hover:border-neutral-600'
+                    }`}
+                  >
+                    {metodo}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="border-t border-neutral-800 pt-3 mb-4">
+              <div className="flex justify-between text-white font-bold text-base">
+                <span>Total acumulado:</span>
+                <span className="text-yellow-400">${totalGeneralCuenta.toFixed(2)}</span>
+              </div>
+              <p className="text-[11px] text-neutral-400 mt-0.5">
+                Pago seleccionado: <span className="text-white font-semibold">{metodoPago}</span>
+              </p>
+            </div>
+
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setMostrarResumen(false);
+                  setMostrarCatalogo(true);
+                }}
+                className="w-1/2 bg-neutral-800 hover:bg-neutral-700 text-white font-bold py-2.5 rounded-xl text-xs transition-colors"
+              >
+                Seguir pidiendo
+              </button>
+              <button
+                type="button"
+                onClick={finalizarCuenta}
+                disabled={finalizandoCuenta}
+                className="w-1/2 bg-green-600 hover:bg-green-500 disabled:opacity-60 text-white font-bold py-2.5 rounded-xl text-xs transition-colors shadow-lg"
+              >
+                {finalizandoCuenta ? 'Finalizando...' : 'Finalizar cuenta 🧾'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL 4: PANTALLITA DE CONFIRMACIÓN DE ENVÍO */}
+      {mostrarConfirmacionEnvio && (
+        <div className="fixed inset-0 bg-black/85 backdrop-blur-sm z-[80] flex justify-center items-center p-4">
+          <div className="bg-neutral-900 border border-green-500/40 w-full max-w-sm rounded-2xl p-6 text-center shadow-2xl">
+            <div className="w-12 h-12 rounded-full bg-green-500/20 text-green-400 flex items-center justify-center text-2xl mx-auto mb-3">
+              ✓
+            </div>
+            <h3 className="text-base font-bold text-white mb-1">¡Listo!</h3>
+            <p className="text-sm text-neutral-200 mb-5">
+              Tu pedido ha sido confirmado y enviado correctamente!
+            </p>
+            <button
+              type="button"
+              onClick={() => setMostrarConfirmacionEnvio(false)}
+              className="w-full bg-green-600 hover:bg-green-500 text-white font-bold py-2.5 rounded-xl text-xs transition-colors"
+            >
+              Aceptar
+            </button>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
