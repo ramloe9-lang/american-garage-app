@@ -73,4 +73,42 @@ def obtener_menu(response: Response, categoria: str | None = None) -> list[ItemM
             modo_clima = "calor"
 
     # Inyectamos los datos del clima en los headers HTTP para que el frontend los lea
-    response.headers["X
+    response.headers["X-Temperatura"] = str(temperatura) if temperatura is not None else "16"
+    response.headers["X-Clima-Modo"] = modo_clima
+    # -------------------------------------------------------------------
+
+    try:
+        items = construir_menu(tablas, temperatura)
+    except Exception:
+        logger.exception("Error calculando el menú")
+        raise HTTPException(
+            status_code=500, detail="Error interno calculando el menú."
+        )
+
+    if categoria:
+        items = [i for i in items if i.categoria.casefold() == categoria.casefold()]
+
+    response.headers["Cache-Control"] = "public, max-age=60"
+    return items
+
+
+# REGISTRO DEL ENDPOINT PÚBLICO SEGURO (/api/v1/menu/public)
+app.include_router(crear_router_publico(obtener_menu))
+
+# REGISTRO DE ENDPOINTS KDS (/api/v1/cocina)
+app.include_router(cocina_router)
+
+
+@app.get(
+    "/api/v1/dashboard",
+    response_model=DashboardResponse,
+    dependencies=[Depends(verificar_api_key)],
+)
+def obtener_dashboard() -> DashboardResponse:
+    """KPIs calculados en la pestaña Dashboard_Resumen."""
+    kpis = _leer_hoja(sheets.obtener_dashboard)
+    return DashboardResponse(
+        generado_en=datetime.now(timezone.utc),
+        total=len(kpis),
+        kpis=[Kpi(**k) for k in kpis],
+    )
