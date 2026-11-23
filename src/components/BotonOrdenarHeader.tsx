@@ -308,6 +308,7 @@ export function BotonOrdenarHeader({ productosDisponibles = [] }: BotonOrdenarHe
       {/* BOTÓN EN LA CABECERA */}
       <div className="flex items-center gap-2">
         <button
+          type="button"
           onClick={() => {
             if (!validarMesaActiva()) return;
             cargarCuentaMesa();
@@ -334,6 +335,7 @@ export function BotonOrdenarHeader({ productosDisponibles = [] }: BotonOrdenarHe
                 )}
               </div>
               <button
+                type="button"
                 onClick={() => setMostrarCatalogo(false)}
                 className="text-neutral-400 hover:text-white text-xl font-bold p-1"
               >
@@ -375,6 +377,7 @@ export function BotonOrdenarHeader({ productosDisponibles = [] }: BotonOrdenarHe
               <div className="space-y-2 pt-2 border-t border-neutral-800">
                 {carrito.length > 0 && (
                   <button
+                    type="button"
                     onClick={confirmarPedido}
                     disabled={enviandoCocina}
                     className="w-full bg-yellow-500 hover:bg-yellow-400 disabled:opacity-60 text-neutral-950 font-bold py-2.5 rounded-xl text-xs transition-colors shadow-lg flex justify-between px-4 items-center"
@@ -391,6 +394,7 @@ export function BotonOrdenarHeader({ productosDisponibles = [] }: BotonOrdenarHe
                 )}
 
                 <button
+                  type="button"
                   onClick={() => {
                     cargarCuentaMesa();
                     setMostrarCatalogo(false);
@@ -399,4 +403,4 @@ export function BotonOrdenarHeader({ productosDisponibles = [] }: BotonOrdenarHe
                   className="w-full bg-green-600 hover:bg-green-500 text-white font-bold py-2.5 rounded-xl text-xs transition-colors shadow-lg flex justify-between px-4 items-center"
                 >
                   <span>Ver cuenta / Finalizar cuenta</span>
-                  <span className="bg-white/20 px
+                  <span className="bg-white/20 px-
