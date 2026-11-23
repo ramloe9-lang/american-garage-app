@@ -19,37 +19,63 @@ interface ItemCarrito {
   subtotal: number;
 }
 
+interface RondaPedido {
+  numeroRonda: number;
+  items: ItemCarrito[];
+  subtotalRonda: number;
+}
+
 interface BotonOrdenarHeaderProps {
   productosDisponibles?: Producto[];
 }
 
-// Función auxiliar robusta para extraer el precio sin importar cómo venga de la API
 const obtenerPrecio = (prod: Producto): number => {
   return Number(prod.precio_final ?? prod.precio_original ?? prod.precio ?? 0);
 };
+
+const TELEFONO_RESTAURANTE = '524425568390';
 
 export function BotonOrdenarHeader({ productosDisponibles = [] }: BotonOrdenarHeaderProps) {
   const mesa = useMesa();
   const [mostrarCatalogo, setMostrarCatalogo] = useState(false);
   const [mostrarResumen, setMostrarResumen] = useState(false);
   const [productoSeleccionado, setProductoSeleccionado] = useState<Producto | null>(null);
-  
+
   // Estado para el modal de personalización
   const [cantidad, setCantidad] = useState<number>(1);
   const [comentarios, setComentarios] = useState<string>('');
-  
-  // Estado para el método de pago seleccionado
+
+  // Estado para el método de pago seleccionado (usado al finalizar cuenta)
   const [metodoPago, setMetodoPago] = useState<string>('Efectivo');
-  
-  // Carrito de compras persistente en el celular del cliente
+
+  // Carrito de compras actual (ronda pendiente por confirmar)
   const [carrito, setCarrito] = useState<ItemCarrito[]>(() => {
     const saved = localStorage.getItem('carrito_pedidos');
     return saved ? JSON.parse(saved) : [];
   });
 
+  // Cuenta acumulada de la mesa (rondas ya confirmadas)
+  const [rondasConfirmadas, setRondasConfirmadas] = useState<RondaPedido[]>([]);
+
   useEffect(() => {
     localStorage.setItem('carrito_pedidos', JSON.stringify(carrito));
   }, [carrito]);
+
+  // Cargar o limpiar la cuenta acumulada según la mesa activa
+  useEffect(() => {
+    if (!mesa) {
+      setRondasConfirmadas([]);
+      return;
+    }
+    const savedCuenta = localStorage.getItem(`cuenta_mesa_${mesa}`);
+    setRondasConfirmadas(savedCuenta ? JSON.parse(savedCuenta) : []);
+  }, [mesa]);
+
+  useEffect(() => {
+    if (mesa) {
+      localStorage.setItem(`cuenta_mesa_${mesa}`, JSON.stringify(rondasConfirmadas));
+    }
+  }, [mesa, rondasConfirmadas]);
 
   const abrirPersonalizacion = (prod: Producto) => {
     setProductoSeleccionado(prod);
@@ -68,7 +94,7 @@ export function BotonOrdenarHeader({ productosDisponibles = [] }: BotonOrdenarHe
       precio: precioUnitario,
       cantidad,
       comentarios,
-      subtotal: precioUnitario * cantidad
+      subtotal: precioUnitario * cantidad,
     };
 
     setCarrito([...carrito, nuevoItem]);
@@ -80,15 +106,28 @@ export function BotonOrdenarHeader({ productosDisponibles = [] }: BotonOrdenarHe
     setCarrito(nuevoCarrito);
   };
 
-  const totalGeneral = carrito.reduce((acc, item) => acc + item.subtotal, 0);
+  const subtotalCarritoActual = carrito.reduce((acc, item) => acc + item.subtotal, 0);
+  const totalRondasConfirmadas = rondasConfirmadas.reduce((acc, ronda) => acc + ronda.subtotalRonda, 0);
+  const totalGeneralCuenta = totalRondasConfirmadas + subtotalCarritoActual;
+  const totalItemsEnCuenta =
+    carrito.length + rondasConfirmadas.reduce((acc, ronda) => acc + ronda.items.length, 0);
 
-  const enviarOrden = () => {
+  const validarMesaActiva = (): boolean => {
+    if (!mesa) {
+      alert('⚠️ Para poder ordenar, debes escanear el código QR impreso en tu mesa.');
+      return false;
+    }
+    return true;
+  };
+
+  // 1. CONFIRMAR PEDIDO (envía la ronda actual sin cerrar la cuenta)
+  const confirmarPedido = () => {
+    if (!validarMesaActiva()) return;
     if (carrito.length === 0) return;
 
-    // 1. Armamos el encabezado del mensaje con la mesa actual
-    let mensaje = `🔥 *NUEVO PEDIDO - MESA ${mesa}* 🔥\n\n`;
+    const numeroRonda = rondasConfirmadas.length + 1;
+    let mensaje = `🔥 *CONFIRMAR PEDIDO (RONDA #${numeroRonda}) - MESA ${mesa}* 🔥\n\n`;
 
-    // 2. Recorremos los productos del carrito para listarlos
     carrito.forEach((item, index) => {
       mensaje += `${index + 1}. *${item.cantidad}x* ${item.nombre} ($${item.subtotal.toFixed(2)})\n`;
       if (item.comentarios) {
@@ -96,22 +135,68 @@ export function BotonOrdenarHeader({ productosDisponibles = [] }: BotonOrdenarHe
       }
     });
 
-    // 3. Agregamos el método de pago elegido y el total general
-    mensaje += `\n💳 *Método de pago:* ${metodoPago}`;
-    mensaje += `\n*Total a pagar: $${totalGeneral.toFixed(2)}*`;
+    mensaje += `\n*Subtotal ronda:* $${subtotalCarritoActual.toFixed(2)}`;
+    mensaje += `\n_Cuenta abierta: el cliente puede seguir pidiendo más._`;
 
-    // ⚠️ Número de WhatsApp del restaurante (ejemplo: código de país + número)
-    const telefonoRestaurante = "524425568390"; 
-
-    // 4. Creamos el enlace oficial de WhatsApp con el texto codificado
-    const urlWhatsapp = `https://wa.me/${telefonoRestaurante}?text=${encodeURIComponent(mensaje)}`;
-
-    // 5. Abrimos WhatsApp en una nueva pestaña / app móvil
+    const urlWhatsapp = `https://wa.me/${TELEFONO_RESTAURANTE}?text=${encodeURIComponent(mensaje)}`;
     window.open(urlWhatsapp, '_blank');
 
-    // 6. Limpiamos el carrito y cerramos los modales
+    const nuevaRonda: RondaPedido = {
+      numeroRonda,
+      items: carrito,
+      subtotalRonda: subtotalCarritoActual,
+    };
+
+    setRondasConfirmadas([...rondasConfirmadas, nuevaRonda]);
     setCarrito([]);
     localStorage.removeItem('carrito_pedidos');
+  };
+
+  // 2. FINALIZAR CUENTA (resumen completo + método de pago + cierre)
+  const finalizarCuenta = () => {
+    if (!validarMesaActiva()) return;
+
+    // Si aún tenía algo en el carrito sin confirmar, lo incluimos en el cierre
+    const rondasParaResumen: RondaPedido[] =
+      carrito.length > 0
+        ? [
+            ...rondasConfirmadas,
+            {
+              numeroRonda: rondasConfirmadas.length + 1,
+              items: carrito,
+              subtotalRonda: subtotalCarritoActual,
+            },
+          ]
+        : rondasConfirmadas;
+
+    if (rondasParaResumen.length === 0) return;
+
+    let mensaje = `🧾 *FINALIZAR CUENTA - MESA ${mesa}* 🧾\n\n`;
+
+    rondasParaResumen.forEach((ronda) => {
+      mensaje += `*Ronda #${ronda.numeroRonda}:*\n`;
+      ronda.items.forEach((item, idx) => {
+        mensaje += `  ${idx + 1}. *${item.cantidad}x* ${item.nombre} ($${item.subtotal.toFixed(2)})\n`;
+        if (item.comentarios) {
+          mensaje += `     _Nota: ${item.comentarios}_\n`;
+        }
+      });
+      mensaje += `  _Subtotal ronda: $${ronda.subtotalRonda.toFixed(2)}_\n\n`;
+    });
+
+    mensaje += `💳 *Método de pago:* ${metodoPago}\n`;
+    mensaje += `*TOTAL GENERAL DE LA CUENTA: $${totalGeneralCuenta.toFixed(2)}*`;
+
+    const urlWhatsapp = `https://wa.me/${TELEFONO_RESTAURANTE}?text=${encodeURIComponent(mensaje)}`;
+    window.open(urlWhatsapp, '_blank');
+
+    // Limpiamos carrito y cuenta acumulada al cerrar la cuenta
+    setCarrito([]);
+    setRondasConfirmadas([]);
+    localStorage.removeItem('carrito_pedidos');
+    if (mesa) {
+      localStorage.removeItem(`cuenta_mesa_${mesa}`);
+    }
     setMostrarResumen(false);
     setMostrarCatalogo(false);
   };
@@ -120,17 +205,14 @@ export function BotonOrdenarHeader({ productosDisponibles = [] }: BotonOrdenarHe
     <>
       {/* BOTÓN EN LA CABECERA */}
       <div className="flex items-center gap-2">
-        <button 
+        <button
           onClick={() => {
-            if (!mesa) {
-              alert("⚠️ Para poder ordenar, debes escanear el código QR impreso en tu mesa.");
-              return;
-            }
+            if (!validarMesaActiva()) return;
             setMostrarCatalogo(true);
           }}
           className="bg-green-600 hover:bg-green-500 text-white text-xs font-bold px-3 py-1.5 rounded-full transition-transform active:scale-95 flex items-center gap-1.5 shadow-lg"
         >
-          🛒 Ordenar ya {carrito.length > 0 && `(${carrito.length})`}
+          🛒 Ordenar ya {totalItemsEnCuenta > 0 && `(${totalItemsEnCuenta})`}
         </button>
       </div>
 
@@ -139,21 +221,29 @@ export function BotonOrdenarHeader({ productosDisponibles = [] }: BotonOrdenarHe
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex justify-center items-center p-4">
           <div className="bg-neutral-900 border border-neutral-800 w-full max-w-md rounded-2xl p-5 max-h-[85vh] flex flex-col relative shadow-2xl">
             <div className="flex justify-between items-center mb-3 pb-2 border-b border-neutral-800">
-              <h2 className="text-lg font-bold text-yellow-400">Selecciona tus platillos</h2>
-              <button 
+              <div>
+                <h2 className="text-lg font-bold text-yellow-400">Selecciona tus platillos</h2>
+                {rondasConfirmadas.length > 0 && (
+                  <p className="text-[11px] text-neutral-400">
+                    Cuenta abierta: ${totalRondasConfirmadas.toFixed(2)} ({rondasConfirmadas.length}{' '}
+                    {rondasConfirmadas.length === 1 ? 'ronda' : 'rondas'})
+                  </p>
+                )}
+              </div>
+              <button
                 onClick={() => setMostrarCatalogo(false)}
                 className="text-neutral-400 hover:text-white text-xl font-bold p-1"
               >
                 ✕
               </button>
             </div>
-            
+
             <div className="space-y-2.5 overflow-y-auto pr-1 flex-1 mb-4">
               {productosDisponibles && productosDisponibles.length > 0 ? (
                 productosDisponibles.map((prod: Producto) => {
                   const precioProd = obtenerPrecio(prod);
                   return (
-                    <div 
+                    <div
                       key={prod.id}
                       onClick={() => abrirPersonalizacion(prod)}
                       className="bg-neutral-800/60 hover:bg-neutral-800 border border-neutral-700/50 p-3 rounded-xl cursor-pointer flex justify-between items-center transition-colors"
@@ -171,22 +261,40 @@ export function BotonOrdenarHeader({ productosDisponibles = [] }: BotonOrdenarHe
                   );
                 })
               ) : (
-                <p className="text-neutral-400 text-center py-6 text-sm">No hay productos disponibles por el momento.</p>
+                <p className="text-neutral-400 text-center py-6 text-sm">
+                  No hay productos disponibles por el momento.
+                </p>
               )}
             </div>
 
-            {/* BOTÓN PARA VER EL CARRITO ACUMULADO */}
-            {carrito.length > 0 && (
-              <button 
-                onClick={() => {
-                  setMostrarCatalogo(false);
-                  setMostrarResumen(true);
-                }}
-                className="w-full bg-green-600 hover:bg-green-500 text-white font-bold py-3 rounded-xl text-sm transition-colors shadow-lg flex justify-between px-4 items-center"
-              >
-                <span>Ver mi orden (${totalGeneral.toFixed(2)})</span>
-                <span className="bg-white/20 px-2 py-0.5 rounded-full text-xs">{carrito.length} items</span>
-              </button>
+            {/* ACCIONES DENTRO DEL MENÚ DE ORDENAR */}
+            {(carrito.length > 0 || rondasConfirmadas.length > 0) && (
+              <div className="space-y-2 pt-2 border-t border-neutral-800">
+                {carrito.length > 0 && (
+                  <button
+                    onClick={confirmarPedido}
+                    className="w-full bg-yellow-500 hover:bg-yellow-400 text-neutral-950 font-bold py-2.5 rounded-xl text-xs transition-colors shadow-lg flex justify-between px-4 items-center"
+                  >
+                    <span>Confirmar pedido (${subtotalCarritoActual.toFixed(2)})</span>
+                    <span className="bg-black/15 px-2 py-0.5 rounded-full text-[11px]">
+                      {carrito.length} {carrito.length === 1 ? 'item' : 'items'}
+                    </span>
+                  </button>
+                )}
+
+                <button
+                  onClick={() => {
+                    setMostrarCatalogo(false);
+                    setMostrarResumen(true);
+                  }}
+                  className="w-full bg-green-600 hover:bg-green-500 text-white font-bold py-2.5 rounded-xl text-xs transition-colors shadow-lg flex justify-between px-4 items-center"
+                >
+                  <span>Ver cuenta / Finalizar cuenta</span>
+                  <span className="bg-white/20 px-2 py-0.5 rounded-full text-xs">
+                    ${totalGeneralCuenta.toFixed(2)}
+                  </span>
+                </button>
+              </div>
             )}
           </div>
         </div>
@@ -196,7 +304,7 @@ export function BotonOrdenarHeader({ productosDisponibles = [] }: BotonOrdenarHe
       {productoSeleccionado && (
         <div className="fixed inset-0 bg-black/90 backdrop-blur-sm z-[60] flex justify-center items-center p-4">
           <div className="bg-neutral-900 border border-neutral-800 w-full max-w-md rounded-2xl p-5 relative shadow-2xl">
-            <button 
+            <button
               onClick={() => setProductoSeleccionado(null)}
               className="absolute top-4 right-4 text-neutral-400 hover:text-white text-xl font-bold"
             >
@@ -212,15 +320,19 @@ export function BotonOrdenarHeader({ productosDisponibles = [] }: BotonOrdenarHe
             <div className="flex items-center justify-between mb-4 bg-neutral-800 p-3 rounded-xl border border-neutral-700/50">
               <span className="text-sm font-medium text-gray-200">Cantidad:</span>
               <div className="flex items-center gap-3">
-                <button 
+                <button
                   onClick={() => setCantidad(Math.max(1, cantidad - 1))}
                   className="w-8 h-8 bg-neutral-700 rounded-lg font-bold text-white hover:bg-neutral-600 text-base"
-                >-</button>
+                >
+                  -
+                </button>
                 <span className="font-bold text-white text-base">{cantidad}</span>
-                <button 
+                <button
                   onClick={() => setCantidad(cantidad + 1)}
                   className="w-8 h-8 bg-neutral-700 rounded-lg font-bold text-white hover:bg-neutral-600 text-base"
-                >+</button>
+                >
+                  +
+                </button>
               </div>
             </div>
 
@@ -229,7 +341,7 @@ export function BotonOrdenarHeader({ productosDisponibles = [] }: BotonOrdenarHe
               <label className="block text-xs font-medium text-gray-300 mb-1.5">
                 Notas especiales (ej. sin cebolla, aderezo extra...):
               </label>
-              <textarea 
+              <textarea
                 value={comentarios}
                 onChange={(e) => setComentarios(e.target.value)}
                 placeholder="Escribe aquí tus especificaciones..."
@@ -238,7 +350,7 @@ export function BotonOrdenarHeader({ productosDisponibles = [] }: BotonOrdenarHe
             </div>
 
             {/* Botón Confirmar */}
-            <button 
+            <button
               onClick={agregarAlCarrito}
               className="w-full bg-yellow-500 hover:bg-yellow-400 text-neutral-950 font-bold py-2.5 rounded-xl text-sm transition-colors shadow-lg"
             >
@@ -248,13 +360,13 @@ export function BotonOrdenarHeader({ productosDisponibles = [] }: BotonOrdenarHe
         </div>
       )}
 
-      {/* MODAL 3: RESUMEN DE LA ORDEN (CARRITO FINAL) */}
+      {/* MODAL 3: RESUMEN COMPLETO Y FINALIZAR CUENTA */}
       {mostrarResumen && (
         <div className="fixed inset-0 bg-black/90 backdrop-blur-sm z-[70] flex justify-center items-center p-4">
           <div className="bg-neutral-900 border border-neutral-800 w-full max-w-md rounded-2xl p-5 max-h-[85vh] flex flex-col relative shadow-2xl">
             <div className="flex justify-between items-center mb-3 pb-2 border-b border-neutral-800">
-              <h2 className="text-lg font-bold text-yellow-400">Resumen de tu Orden (Mesa {mesa})</h2>
-              <button 
+              <h2 className="text-lg font-bold text-yellow-400">Cuenta de la Mesa {mesa}</h2>
+              <button
                 onClick={() => setMostrarResumen(false)}
                 className="text-neutral-400 hover:text-white text-xl font-bold p-1"
               >
@@ -263,16 +375,51 @@ export function BotonOrdenarHeader({ productosDisponibles = [] }: BotonOrdenarHe
             </div>
 
             <div className="space-y-3 overflow-y-auto pr-1 flex-1 mb-3">
+              {/* Rondas ya confirmadas */}
+              {rondasConfirmadas.map((ronda) => (
+                <div
+                  key={ronda.numeroRonda}
+                  className="bg-neutral-800/40 p-3 rounded-xl border border-neutral-700/40 space-y-2"
+                >
+                  <div className="flex justify-between items-center">
+                    <span className="text-xs font-bold text-green-400">
+                      ✓ Ronda #{ronda.numeroRonda} confirmada
+                    </span>
+                    <span className="text-xs font-bold text-neutral-300">
+                      ${ronda.subtotalRonda.toFixed(2)}
+                    </span>
+                  </div>
+                  {ronda.items.map((item, idx) => (
+                    <div key={idx} className="text-xs text-neutral-200 flex justify-between">
+                      <span>
+                        {item.cantidad}x {item.nombre}
+                        {item.comentarios ? ` (${item.comentarios})` : ''}
+                      </span>
+                      <span className="text-neutral-400">${item.subtotal.toFixed(2)}</span>
+                    </div>
+                  ))}
+                </div>
+              ))}
+
+              {/* Ítems actuales aún sin confirmar */}
               {carrito.map((item, index) => (
-                <div key={index} className="bg-neutral-800/80 p-3 rounded-xl border border-neutral-700/50 flex justify-between items-start">
+                <div
+                  key={index}
+                  className="bg-neutral-800/80 p-3 rounded-xl border border-yellow-500/30 flex justify-between items-start"
+                >
                   <div>
-                    <p className="font-bold text-white text-sm">{item.cantidad}x {item.nombre}</p>
+                    <span className="text-[10px] uppercase font-bold text-yellow-400 block mb-0.5">
+                      Por confirmar
+                    </span>
+                    <p className="font-bold text-white text-sm">
+                      {item.cantidad}x {item.nombre}
+                    </p>
                     {item.comentarios && (
                       <p className="text-xs text-neutral-400 italic mt-0.5">Nota: {item.comentarios}</p>
                     )}
                     <p className="text-xs text-yellow-400 font-bold mt-1">${item.subtotal.toFixed(2)}</p>
                   </div>
-                  <button 
+                  <button
                     onClick={() => eliminarDelCarrito(index)}
                     className="text-red-400 hover:text-red-300 text-xs font-bold px-2 py-1 bg-red-500/10 rounded-lg"
                   >
@@ -282,10 +429,10 @@ export function BotonOrdenarHeader({ productosDisponibles = [] }: BotonOrdenarHe
               ))}
             </div>
 
-            {/* SECCIÓN DE MÉTODO DE PAGO */}
+            {/* SECCIÓN DE MÉTODO DE PAGO PARA FINALIZAR CUENTA */}
             <div className="bg-neutral-800/50 border border-neutral-700/50 p-3 rounded-xl mb-3">
               <label className="block text-xs font-bold text-gray-300 mb-2">
-                💳 Método de pago preferido:
+                💳 Método de pago para finalizar cuenta:
               </label>
               <div className="grid grid-cols-2 gap-2">
                 {['Efectivo', 'Tarjeta (Terminal)'].map((metodo) => (
@@ -307,8 +454,8 @@ export function BotonOrdenarHeader({ productosDisponibles = [] }: BotonOrdenarHe
 
             <div className="border-t border-neutral-800 pt-3 mb-4">
               <div className="flex justify-between text-white font-bold text-base">
-                <span>Total a pagar:</span>
-                <span className="text-yellow-400">${totalGeneral.toFixed(2)}</span>
+                <span>Total acumulado:</span>
+                <span className="text-yellow-400">${totalGeneralCuenta.toFixed(2)}</span>
               </div>
               <p className="text-[11px] text-neutral-400 mt-0.5">
                 Pago seleccionado: <span className="text-white font-semibold">{metodoPago}</span>
@@ -316,7 +463,7 @@ export function BotonOrdenarHeader({ productosDisponibles = [] }: BotonOrdenarHe
             </div>
 
             <div className="flex gap-2">
-              <button 
+              <button
                 onClick={() => {
                   setMostrarResumen(false);
                   setMostrarCatalogo(true);
@@ -325,11 +472,11 @@ export function BotonOrdenarHeader({ productosDisponibles = [] }: BotonOrdenarHe
               >
                 Seguir pidiendo
               </button>
-              <button 
-                onClick={enviarOrden}
+              <button
+                onClick={finalizarCuenta}
                 className="w-1/2 bg-green-600 hover:bg-green-500 text-white font-bold py-2.5 rounded-xl text-xs transition-colors shadow-lg"
               >
-                Enviar a WhatsApp 🚀
+                Finalizar cuenta 🧾
               </button>
             </div>
           </div>
