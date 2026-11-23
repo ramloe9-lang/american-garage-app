@@ -4,6 +4,7 @@ import { useMesa } from '../hooks/useMesa';
 interface Producto {
   id: string | number;
   nombre: string;
+  categoria?: string;
   precio?: number;
   precio_final?: number;
   precio_original?: number;
@@ -13,6 +14,7 @@ interface Producto {
 interface ItemCarrito {
   id: string | number;
   nombre: string;
+  categoria: string;
   precio: number;
   cantidad: number;
   comentarios: string;
@@ -34,6 +36,9 @@ const obtenerPrecio = (prod: Producto): number => {
 };
 
 const TELEFONO_RESTAURANTE = '524425568390';
+const API_BASE =
+  (import.meta as unknown as { env?: Record<string, string> }).env?.VITE_API_URL ||
+  'https://american-garage-app.onrender.com';
 
 export function BotonOrdenarHeader({ productosDisponibles = [] }: BotonOrdenarHeaderProps) {
   const mesa = useMesa();
@@ -47,6 +52,9 @@ export function BotonOrdenarHeader({ productosDisponibles = [] }: BotonOrdenarHe
 
   // Estado para el método de pago seleccionado (usado al finalizar cuenta)
   const [metodoPago, setMetodoPago] = useState<string>('Efectivo');
+
+  // Estado para indicar si está enviando la ronda a cocina
+  const [enviandoCocina, setEnviandoCocina] = useState<boolean>(false);
 
   // Carrito de compras actual (ronda pendiente por confirmar)
   const [carrito, setCarrito] = useState<ItemCarrito[]>(() => {
@@ -91,6 +99,7 @@ export function BotonOrdenarHeader({ productosDisponibles = [] }: BotonOrdenarHe
     const nuevoItem: ItemCarrito = {
       id: productoSeleccionado.id,
       nombre: productoSeleccionado.nombre,
+      categoria: String(productoSeleccionado.categoria ?? ''),
       precio: precioUnitario,
       cantidad,
       comentarios,
@@ -120,36 +129,65 @@ export function BotonOrdenarHeader({ productosDisponibles = [] }: BotonOrdenarHe
     return true;
   };
 
-  // 1. CONFIRMAR PEDIDO (envía la ronda actual sin cerrar la cuenta)
-  const confirmarPedido = () => {
+  // 1. CONFIRMAR PEDIDO (envía la ronda a /api/v1/cocina/comandas y mantiene la cuenta abierta)
+  const confirmarPedido = async () => {
     if (!validarMesaActiva()) return;
-    if (carrito.length === 0) return;
+    if (carrito.length === 0 || enviandoCocina) return;
 
     const numeroRonda = rondasConfirmadas.length + 1;
-    let mensaje = `🔥 *CONFIRMAR PEDIDO (RONDA #${numeroRonda}) - MESA ${mesa}* 🔥\n\n`;
+    setEnviandoCocina(true);
 
-    carrito.forEach((item, index) => {
-      mensaje += `${index + 1}. *${item.cantidad}x* ${item.nombre} ($${item.subtotal.toFixed(2)})\n`;
-      if (item.comentarios) {
-        mensaje += `   _Nota: ${item.comentarios}_\n`;
+    try {
+      const res = await fetch(`${API_BASE}/api/v1/cocina/comandas`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          mesa: String(mesa),
+          numero_ronda: numeroRonda,
+          items: carrito.map((item) => ({
+            producto_id: String(item.id),
+            nombre: item.nombre,
+            cantidad: item.cantidad,
+            categoria: item.categoria,
+            notas: item.comentarios || null,
+          })),
+        }),
+      });
+
+      if (!res.ok) {
+        throw new Error(`Error al enviar comanda (${res.status})`);
       }
-    });
 
-    mensaje += `\n*Subtotal ronda:* $${subtotalCarritoActual.toFixed(2)}`;
-    mensaje += `\n_Cuenta abierta: el cliente puede seguir pidiendo más._`;
+      let mensaje = `🔥 *CONFIRMAR PEDIDO (RONDA #${numeroRonda}) - MESA ${mesa}* 🔥\n\n`;
 
-    const urlWhatsapp = `https://wa.me/${TELEFONO_RESTAURANTE}?text=${encodeURIComponent(mensaje)}`;
-    window.open(urlWhatsapp, '_blank');
+      carrito.forEach((item, index) => {
+        mensaje += `${index + 1}. *${item.cantidad}x* ${item.nombre} ($${item.subtotal.toFixed(2)})\n`;
+        if (item.comentarios) {
+          mensaje += `   _Nota: ${item.comentarios}_\n`;
+        }
+      });
 
-    const nuevaRonda: RondaPedido = {
-      numeroRonda,
-      items: carrito,
-      subtotalRonda: subtotalCarritoActual,
-    };
+      mensaje += `\n*Subtotal ronda:* $${subtotalCarritoActual.toFixed(2)}`;
+      mensaje += `\n_Cuenta abierta: el cliente puede seguir pidiendo más._`;
 
-    setRondasConfirmadas([...rondasConfirmadas, nuevaRonda]);
-    setCarrito([]);
-    localStorage.removeItem('carrito_pedidos');
+      const urlWhatsapp = `https://wa.me/${TELEFONO_RESTAURANTE}?text=${encodeURIComponent(mensaje)}`;
+      window.open(urlWhatsapp, '_blank');
+
+      const nuevaRonda: RondaPedido = {
+        numeroRonda,
+        items: carrito,
+        subtotalRonda: subtotalCarritoActual,
+      };
+
+      setRondasConfirmadas([...rondasConfirmadas, nuevaRonda]);
+      setCarrito([]);
+      localStorage.removeItem('carrito_pedidos');
+    } catch (err) {
+      console.error(err);
+      alert('⚠️ No se pudo enviar la ronda a cocina. Intenta de nuevo.');
+    } finally {
+      setEnviandoCocina(false);
+    }
   };
 
   // 2. FINALIZAR CUENTA (resumen completo + método de pago + cierre)
@@ -273,9 +311,14 @@ export function BotonOrdenarHeader({ productosDisponibles = [] }: BotonOrdenarHe
                 {carrito.length > 0 && (
                   <button
                     onClick={confirmarPedido}
-                    className="w-full bg-yellow-500 hover:bg-yellow-400 text-neutral-950 font-bold py-2.5 rounded-xl text-xs transition-colors shadow-lg flex justify-between px-4 items-center"
+                    disabled={enviandoCocina}
+                    className="w-full bg-yellow-500 hover:bg-yellow-400 disabled:opacity-60 text-neutral-950 font-bold py-2.5 rounded-xl text-xs transition-colors shadow-lg flex justify-between px-4 items-center"
                   >
-                    <span>Confirmar pedido (${subtotalCarritoActual.toFixed(2)})</span>
+                    <span>
+                      {enviandoCocina
+                        ? 'Enviando a cocina...'
+                        : `Confirmar pedido ($${subtotalCarritoActual.toFixed(2)})`}
+                    </span>
                     <span className="bg-black/15 px-2 py-0.5 rounded-full text-[11px]">
                       {carrito.length} {carrito.length === 1 ? 'item' : 'items'}
                     </span>
