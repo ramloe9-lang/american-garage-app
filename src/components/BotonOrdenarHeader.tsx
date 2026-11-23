@@ -46,6 +46,9 @@ export function BotonOrdenarHeader({ productosDisponibles = [] }: BotonOrdenarHe
   const [mostrarResumen, setMostrarResumen] = useState(false);
   const [productoSeleccionado, setProductoSeleccionado] = useState<Producto | null>(null);
 
+  // Pantallita de confirmación al enviar ronda a cocina
+  const [mostrarConfirmacionEnvio, setMostrarConfirmacionEnvio] = useState(false);
+
   // Estado para el modal de personalización
   const [cantidad, setCantidad] = useState<number>(1);
   const [comentarios, setComentarios] = useState<string>('');
@@ -56,18 +59,20 @@ export function BotonOrdenarHeader({ productosDisponibles = [] }: BotonOrdenarHe
   // Estado para indicar si está enviando la ronda a cocina
   const [enviandoCocina, setEnviandoCocina] = useState<boolean>(false);
 
-  // Carrito de compras actual (ronda pendiente por confirmar)
-  const [carrito, setCarrito] = useState<ItemCarrito[]>(() => {
-    const saved = localStorage.getItem('carrito_pedidos');
-    return saved ? JSON.parse(saved) : [];
-  });
+  // Carrito de compras actual (siempre inicia vacío al abrir la web app)
+  const [carrito, setCarrito] = useState<ItemCarrito[]>([]);
 
   // Cuenta acumulada de la mesa (rondas ya confirmadas)
   const [rondasConfirmadas, setRondasConfirmadas] = useState<RondaPedido[]>([]);
 
+  // Cada vez que se abre la web app o cambia la mesa, limpiamos cualquier borrador viejo no confirmado
   useEffect(() => {
-    localStorage.setItem('carrito_pedidos', JSON.stringify(carrito));
-  }, [carrito]);
+    setCarrito([]);
+    localStorage.removeItem('carrito_pedidos');
+    if (mesa) {
+      localStorage.removeItem(`carrito_pedidos_mesa_${mesa}`);
+    }
+  }, [mesa]);
 
   // Cargar o limpiar la cuenta acumulada según la mesa activa
   useEffect(() => {
@@ -106,13 +111,12 @@ export function BotonOrdenarHeader({ productosDisponibles = [] }: BotonOrdenarHe
       subtotal: precioUnitario * cantidad,
     };
 
-    setCarrito([...carrito, nuevoItem]);
+    setCarrito((prev) => [...prev, nuevoItem]);
     setProductoSeleccionado(null);
   };
 
   const eliminarDelCarrito = (index: number) => {
-    const nuevoCarrito = carrito.filter((_, i) => i !== index);
-    setCarrito(nuevoCarrito);
+    setCarrito((prev) => prev.filter((_, i) => i !== index));
   };
 
   const subtotalCarritoActual = carrito.reduce((acc, item) => acc + item.subtotal, 0);
@@ -129,7 +133,7 @@ export function BotonOrdenarHeader({ productosDisponibles = [] }: BotonOrdenarHe
     return true;
   };
 
-  // 1. CONFIRMAR PEDIDO (envía la ronda a /api/v1/cocina/comandas y mantiene la cuenta abierta)
+  // 1. CONFIRMAR PEDIDO (envía a cocina, mantiene la cuenta abierta y muestra pantallita de confirmación)
   const confirmarPedido = async () => {
     if (!validarMesaActiva()) return;
     if (carrito.length === 0 || enviandoCocina) return;
@@ -158,30 +162,16 @@ export function BotonOrdenarHeader({ productosDisponibles = [] }: BotonOrdenarHe
         throw new Error(`Error al enviar comanda (${res.status})`);
       }
 
-      let mensaje = `🔥 *CONFIRMAR PEDIDO (RONDA #${numeroRonda}) - MESA ${mesa}* 🔥\n\n`;
-
-      carrito.forEach((item, index) => {
-        mensaje += `${index + 1}. *${item.cantidad}x* ${item.nombre} ($${item.subtotal.toFixed(2)})\n`;
-        if (item.comentarios) {
-          mensaje += `   _Nota: ${item.comentarios}_\n`;
-        }
-      });
-
-      mensaje += `\n*Subtotal ronda:* $${subtotalCarritoActual.toFixed(2)}`;
-      mensaje += `\n_Cuenta abierta: el cliente puede seguir pidiendo más._`;
-
-      const urlWhatsapp = `https://wa.me/${TELEFONO_RESTAURANTE}?text=${encodeURIComponent(mensaje)}`;
-      window.open(urlWhatsapp, '_blank');
-
       const nuevaRonda: RondaPedido = {
         numeroRonda,
         items: carrito,
         subtotalRonda: subtotalCarritoActual,
       };
 
-      setRondasConfirmadas([...rondasConfirmadas, nuevaRonda]);
+      setRondasConfirmadas((prev) => [...prev, nuevaRonda]);
       setCarrito([]);
       localStorage.removeItem('carrito_pedidos');
+      setMostrarConfirmacionEnvio(true);
     } catch (err) {
       console.error(err);
       alert('⚠️ No se pudo enviar la ronda a cocina. Intenta de nuevo.');
@@ -194,7 +184,6 @@ export function BotonOrdenarHeader({ productosDisponibles = [] }: BotonOrdenarHe
   const finalizarCuenta = () => {
     if (!validarMesaActiva()) return;
 
-    // Si aún tenía algo en el carrito sin confirmar, lo incluimos en el cierre
     const rondasParaResumen: RondaPedido[] =
       carrito.length > 0
         ? [
@@ -228,12 +217,12 @@ export function BotonOrdenarHeader({ productosDisponibles = [] }: BotonOrdenarHe
     const urlWhatsapp = `https://wa.me/${TELEFONO_RESTAURANTE}?text=${encodeURIComponent(mensaje)}`;
     window.open(urlWhatsapp, '_blank');
 
-    // Limpiamos carrito y cuenta acumulada al cerrar la cuenta
     setCarrito([]);
     setRondasConfirmadas([]);
     localStorage.removeItem('carrito_pedidos');
     if (mesa) {
       localStorage.removeItem(`cuenta_mesa_${mesa}`);
+      localStorage.removeItem(`carrito_pedidos_mesa_${mesa}`);
     }
     setMostrarResumen(false);
     setMostrarCatalogo(false);
@@ -522,6 +511,28 @@ export function BotonOrdenarHeader({ productosDisponibles = [] }: BotonOrdenarHe
                 Finalizar cuenta 🧾
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL 4: PANTALLITA DE CONFIRMACIÓN DE ENVÍO */}
+      {mostrarConfirmacionEnvio && (
+        <div className="fixed inset-0 bg-black/85 backdrop-blur-sm z-[80] flex justify-center items-center p-4">
+          <div className="bg-neutral-900 border border-green-500/40 w-full max-w-sm rounded-2xl p-6 text-center shadow-2xl">
+            <div className="w-12 h-12 rounded-full bg-green-500/20 text-green-400 flex items-center justify-center text-2xl mx-auto mb-3">
+              ✓
+            </div>
+            <h3 className="text-base font-bold text-white mb-1">¡Listo!</h3>
+            <p className="text-sm text-neutral-200 mb-5">
+              Tu pedido ha sido confirmado y enviado correctamente!
+            </p>
+            <button
+              type="button"
+              onClick={() => setMostrarConfirmacionEnvio(false)}
+              className="w-full bg-green-600 hover:bg-green-500 text-white font-bold py-2.5 rounded-xl text-xs transition-colors"
+            >
+              Aceptar
+            </button>
           </div>
         </div>
       )}
