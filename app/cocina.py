@@ -52,9 +52,25 @@ class ComandaOut(BaseModel):
     ultima_actualizacion: datetime
 
 
+class ItemRondaCuenta(BaseModel):
+    producto_id: str
+    nombre: str
+    categoria: str = ""
+    precio: float = Field(ge=0)
+    cantidad: int = Field(ge=1)
+    comentarios: str = ""
+    subtotal: float = Field(ge=0)
+
+
+class CrearRondaCuentaRequest(BaseModel):
+    items: list[ItemRondaCuenta] = Field(min_length=1)
+    subtotal_ronda: float = Field(ge=0)
+
+
 # Almacenamiento en memoria protegido con Lock (ideal para instancia activa en Render)
 _lock = threading.Lock()
 _comandas: list[ComandaOut] = []
+_cuentas_por_mesa: dict[str, list[dict]] = {}
 
 CATEGORIAS_BEBIDA = {
     "bebida", "bebidas", "cafe", "café", "refresco", "refrescos",
@@ -156,3 +172,55 @@ def restaurar_estacion(comanda_id: str, payload: CompletarComandaIn) -> ComandaO
         comanda.completada_total = all(i.listo for i in comanda.items)
         comanda.ultima_actualizacion = ahora
         return comanda
+
+
+@router.get("/cuentas/{mesa}")
+def obtener_cuenta_mesa(mesa: str) -> dict:
+    """Devuelve las rondas confirmadas vigentes de la mesa y el siguiente número de ronda."""
+    mesa_key = str(mesa).strip()
+    if not mesa_key:
+        raise HTTPException(status_code=400, detail="Mesa inválida.")
+
+    with _lock:
+        rondas = list(_cuentas_por_mesa.get(mesa_key, []))
+        return {
+            "mesa": mesa_key,
+            "rondas": rondas,
+            "siguiente_numero_ronda": len(rondas) + 1,
+        }
+
+
+@router.post("/cuentas/{mesa}/rondas", status_code=201)
+def agregar_ronda_cuenta(mesa: str, payload: CrearRondaCuentaRequest) -> dict:
+    """Registra una ronda confirmada en la cuenta abierta de la mesa."""
+    mesa_key = str(mesa).strip()
+    if not mesa_key:
+        raise HTTPException(status_code=400, detail="Mesa inválida.")
+
+    with _lock:
+        rondas_actuales = _cuentas_por_mesa.setdefault(mesa_key, [])
+        numero_ronda = len(rondas_actuales) + 1
+        nueva_ronda = {
+            "numeroRonda": numero_ronda,
+            "items": [item.model_dump() for item in payload.items],
+            "subtotalRonda": round(float(payload.subtotal_ronda), 2),
+            "confirmadaEn": datetime.now(timezone.utc).isoformat(),
+        }
+        rondas_actuales.append(nueva_ronda)
+        return {
+            "mesa": mesa_key,
+            "ronda": nueva_ronda,
+            "rondas": list(rondas_actuales),
+        }
+
+
+@router.delete("/cuentas/{mesa}")
+def cerrar_cuenta_mesa(mesa: str) -> dict:
+    """Limpia la cuenta abierta de la mesa al finalizar cuenta."""
+    mesa_key = str(mesa).strip()
+    if not mesa_key:
+        raise HTTPException(status_code=400, detail="Mesa inválida.")
+
+    with _lock:
+        _cuentas_por_mesa.pop(mesa_key, None)
+        return {"mesa": mesa_key, "cerrada": True}
