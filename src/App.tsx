@@ -22,7 +22,7 @@ export default function App() {
     return path === '/cocina'
   }, [])
 
-  const { data, isPending, error, refetch, isFetching } = useMenu(!esVistaCocina ? undefined : undefined)
+  const { data, isPending, error, refetch, isFetching } = useMenu()
   const [elegido, setElegido] = useState<GrupoId | null>(null)
   const [soloClima, setSoloClima] = useState(false)
 
