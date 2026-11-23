@@ -74,12 +74,25 @@ export function BotonOrdenarHeader({ productosDisponibles = [] }: BotonOrdenarHe
 
     try {
       const res = await fetch(
-        `${API_BASE}/api/v1/cocina/cuentas/${encodeURIComponent(String(mesa))}`
+        `${API_BASE}/api/v1/cocina/cuentas/${encodeURIComponent(String(mesa))}?t=${Date.now()}`,
+        { cache: 'no-store' }
       );
       if (!res.ok) return;
       const data = await res.json();
-      if (Array.isArray(data.rondas)) {
-        setRondasConfirmadas(data.rondas);
+      const rondasServidor = Array.isArray(data.rondas) ? data.rondas : [];
+      setRondasConfirmadas(rondasServidor);
+
+      // Si la cuenta en el servidor ya fue finalizada (0 rondas) y no hay ítems en el carrito actual,
+      // limpiamos cualquier residuo local y cerramos el modal de resumen si estaba abierto.
+      if (rondasServidor.length === 0) {
+        localStorage.removeItem(`cuenta_mesa_${mesa}`);
+        localStorage.removeItem(`carrito_pedidos_mesa_${mesa}`);
+        setCarrito((carritoActual) => {
+          if (carritoActual.length === 0) {
+            setMostrarResumen(false);
+          }
+          return carritoActual;
+        });
       }
     } catch (err) {
       console.error('Error al cargar la cuenta de la mesa:', err);
@@ -101,10 +114,23 @@ export function BotonOrdenarHeader({ productosDisponibles = [] }: BotonOrdenarHe
   // Actualización periódica para mantener sincronizada la cuenta de la mesa entre dispositivos
   useEffect(() => {
     if (!mesa) return;
+
     const interval = setInterval(() => {
       cargarCuentaMesa();
-    }, 10000);
-    return () => clearInterval(interval);
+    }, 3000);
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        cargarCuentaMesa();
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
   }, [mesa, cargarCuentaMesa]);
 
   const abrirPersonalizacion = (prod: Producto) => {
@@ -161,7 +187,8 @@ export function BotonOrdenarHeader({ productosDisponibles = [] }: BotonOrdenarHe
       let numeroRonda = rondasConfirmadas.length + 1;
       try {
         const cuentaRes = await fetch(
-          `${API_BASE}/api/v1/cocina/cuentas/${encodeURIComponent(String(mesa))}`
+          `${API_BASE}/api/v1/cocina/cuentas/${encodeURIComponent(String(mesa))}?t=${Date.now()}`,
+          { cache: 'no-store' }
         );
         if (cuentaRes.ok) {
           const cuentaData = await cuentaRes.json();
@@ -295,6 +322,7 @@ export function BotonOrdenarHeader({ productosDisponibles = [] }: BotonOrdenarHe
       }
       setMostrarResumen(false);
       setMostrarCatalogo(false);
+      await cargarCuentaMesa();
     } catch (err) {
       console.error(err);
       alert('⚠️ Hubo un problema al cerrar la cuenta en el servidor. Intenta de nuevo.');
