@@ -96,6 +96,7 @@ class RegistroEntregaOut(BaseModel):
     mesa: str
     numero_ronda: int
     cuenta_id: str = "default"
+    numero_cuenta: int = 1
     estacion: FiltroEstacion
     items: list[ItemComandaOut]
     listo_en: datetime
@@ -137,6 +138,13 @@ def _consolidar_historial_por_cuenta_y_ronda(registros: list[RegistroEntregaOut]
     """Agrupa entregas parciales de la misma mesa, cuenta y ronda sin mezclar cuentas distintas."""
     agrupados: dict[tuple[str, str, int], dict] = {}
     orden_claves: list[tuple[str, str, int]] = []
+    contador_cuentas_por_mesa: dict[str, dict[str, int]] = {}
+
+    def _obtener_numero_cuenta(mesa_key: str, cuenta_key: str) -> int:
+        mapa_mesa = contador_cuentas_por_mesa.setdefault(mesa_key, {})
+        if cuenta_key not in mapa_mesa:
+            mapa_mesa[cuenta_key] = len(mapa_mesa) + 1
+        return mapa_mesa[cuenta_key]
 
     for reg in registros:
         mesa_key = str(reg.mesa).strip()
@@ -151,6 +159,7 @@ def _consolidar_historial_por_cuenta_y_ronda(registros: list[RegistroEntregaOut]
                 "mesa": mesa_key,
                 "numero_ronda": int(reg.numero_ronda),
                 "cuenta_id": cuenta_key,
+                "numero_cuenta": _obtener_numero_cuenta(mesa_key, cuenta_key),
                 "estacion": reg.estacion,
                 "items_por_id": {},
                 "listo_en": reg.listo_en,
@@ -175,6 +184,7 @@ def _consolidar_historial_por_cuenta_y_ronda(registros: list[RegistroEntregaOut]
             "mesa": entry["mesa"],
             "numero_ronda": entry["numero_ronda"],
             "cuenta_id": entry["cuenta_id"],
+            "numero_cuenta": entry["numero_cuenta"],
             "estacion": entry["estacion"],
             "items": list(entry["items_por_id"].values()),
             "listo_en": entry["listo_en"],
