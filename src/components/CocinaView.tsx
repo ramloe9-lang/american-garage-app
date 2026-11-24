@@ -23,6 +23,7 @@ export interface Comanda {
   id: string;
   mesa: string;
   numero_ronda: number;
+  cuenta_id?: string;
   creada_en: string;
   items: ItemComanda[];
   completada_total: boolean;
@@ -34,6 +35,7 @@ export interface EntregaPendienteMesa {
   comanda_id: string;
   mesa: string;
   numero_ronda: number;
+  cuenta_id?: string;
   estacion: FiltroEstacion;
   listo_en: string;
   items: ItemComanda[];
@@ -53,6 +55,7 @@ export interface RegistroEntregaAnterior {
   comanda_id: string;
   mesa: string;
   numero_ronda: number;
+  cuenta_id?: string;
   estacion: FiltroEstacion;
   items: ItemComanda[];
   listo_en: string;
@@ -205,7 +208,7 @@ export default function CocinaView() {
     const mapa = new Map<string, RegistroEntregaAnterior>();
 
     for (const reg of estatusMesas.ordenes_anteriores) {
-      const clave = `${reg.mesa}__${reg.numero_ronda}`;
+      const clave = `${reg.mesa}__${reg.cuenta_id || reg.comanda_id}__${reg.numero_ronda}`;
       const existente = mapa.get(clave);
       if (!existente) {
         mapa.set(clave, {
