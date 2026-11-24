@@ -56,6 +56,7 @@ export interface RegistroEntregaAnterior {
   mesa: string;
   numero_ronda: number;
   cuenta_id?: string;
+  numero_cuenta?: number;
   estacion: FiltroEstacion;
   items: ItemComanda[];
   listo_en: string;
@@ -233,6 +234,50 @@ export default function CocinaView() {
     return Array.from(mapa.values());
   }, [estatusMesas.ordenes_anteriores]);
 
+  const cuentasAgrupadasMesas = useMemo(() => {
+    const mapaCuentas = new Map<
+      string,
+      {
+        claveCuenta: string;
+        mesa: string;
+        cuentaId: string;
+        numeroCuenta: number;
+        rondas: RegistroEntregaAnterior[];
+      }
+    >();
+
+    let contadorFallback = 0;
+    const numeroPorMesaCuenta = new Map<string, number>();
+
+    for (const reg of entregasConsolidadasMesas) {
+      const cuentaId = reg.cuenta_id || `comanda-${reg.comanda_id}`;
+      const claveCuenta = `${reg.mesa}__${cuentaId}`;
+
+      if (!mapaCuentas.has(claveCuenta)) {
+        const claveContadorMesa = `${reg.mesa}`;
+        const siguienteNum =
+          reg.numero_cuenta ?? (numeroPorMesaCuenta.get(claveContadorMesa) || 0) + 1;
+        numeroPorMesaCuenta.set(claveContadorMesa, siguienteNum);
+        contadorFallback += 1;
+
+        mapaCuentas.set(claveCuenta, {
+          claveCuenta,
+          mesa: reg.mesa,
+          cuentaId,
+          numeroCuenta: siguienteNum || contadorFallback,
+          rondas: [],
+        });
+      }
+
+      mapaCuentas.get(claveCuenta)!.rondas.push(reg);
+    }
+
+    return Array.from(mapaCuentas.values()).map((grupo) => ({
+      ...grupo,
+      rondas: [...grupo.rondas].sort((a, b) => a.numero_ronda - b.numero_ronda),
+    }));
+  }, [entregasConsolidadasMesas]);
+
   const totalAlertasEstatusMesas =
     estatusMesas.entregas_pendientes.length + estatusMesas.llamados_activos.length;
 
@@ -400,42 +445,69 @@ export default function CocinaView() {
                   Aún no hay entregas ni llamados atendidos en el historial.
                 </p>
               ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-                  {entregasConsolidadasMesas.map((reg) => (
-                    <div
-                      key={reg.id}
-                      className="p-3 rounded-xl bg-zinc-950 border border-zinc-800 space-y-1.5"
-                    >
-                      <div className="flex items-center justify-between">
-                        <span className="font-bold text-base text-white">
-                          Mesa {reg.mesa} · Ronda #{reg.numero_ronda}
-                        </span>
-                        <span className="text-[11px] font-semibold px-2 py-0.5 rounded bg-emerald-950/80 text-emerald-300 border border-emerald-500/30">
-                          Entregado
-                        </span>
-                      </div>
-                      <p className="text-xs text-zinc-300">
-                        {reg.items.map((it) => `${it.cantidad}x ${it.nombre}`).join(", ")}
-                      </p>
-                    </div>
-                  ))}
+                <div className="space-y-4">
+                  {cuentasAgrupadasMesas.length > 0 && (
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                      {cuentasAgrupadasMesas.map((cuenta) => (
+                        <div
+                          key={cuenta.claveCuenta}
+                          className="p-4 rounded-2xl bg-zinc-950/90 border-2 border-zinc-700/80 space-y-3"
+                        >
+                          <div className="flex items-center justify-between pb-2 border-b border-zinc-800">
+                            <span className="font-extrabold text-base text-amber-300">
+                              Mesa {cuenta.mesa} · Cuenta #{cuenta.numeroCuenta}
+                            </span>
+                            <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-zinc-800 text-zinc-300">
+                              {cuenta.rondas.length}{" "}
+                              {cuenta.rondas.length === 1 ? "ronda" : "rondas"}
+                            </span>
+                          </div>
 
-                  {estatusMesas.llamados_atendidos.map((ll) => (
-                    <div
-                      key={ll.id}
-                      className="p-3 rounded-xl bg-zinc-950 border border-zinc-800 space-y-1"
-                    >
-                      <div className="flex items-center justify-between">
-                        <span className="font-bold text-base text-white">
-                          Mesa {ll.mesa} · Llamado mesero
-                        </span>
-                        <span className="text-[11px] font-semibold px-2 py-0.5 rounded bg-emerald-950/80 text-emerald-300 border border-emerald-500/30">
-                          Atendido
-                        </span>
-                      </div>
-                      <p className="text-xs text-zinc-400">{ll.motivo}</p>
+                          <div className="space-y-2.5">
+                            {cuenta.rondas.map((reg) => (
+                              <div
+                                key={reg.id}
+                                className="p-3 rounded-xl bg-zinc-900 border border-zinc-800 space-y-1.5"
+                              >
+                                <div className="flex items-center justify-between">
+                                  <span className="font-bold text-sm text-white">
+                                    Ronda #{reg.numero_ronda}
+                                  </span>
+                                  <span className="text-[11px] font-semibold px-2 py-0.5 rounded bg-emerald-950/80 text-emerald-300 border border-emerald-500/30">
+                                    Entregado
+                                  </span>
+                                </div>
+                                <p className="text-xs text-zinc-300">
+                                  {reg.items.map((it) => `${it.cantidad}x ${it.nombre}`).join(", ")}
+                                </p>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      ))}
                     </div>
-                  ))}
+                  )}
+
+                  {estatusMesas.llamados_atendidos.length > 0 && (
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                      {estatusMesas.llamados_atendidos.map((ll) => (
+                        <div
+                          key={ll.id}
+                          className="p-3 rounded-xl bg-zinc-950 border border-zinc-800 space-y-1"
+                        >
+                          <div className="flex items-center justify-between">
+                            <span className="font-bold text-base text-white">
+                              Mesa {ll.mesa} · Llamado mesero
+                            </span>
+                            <span className="text-[11px] font-semibold px-2 py-0.5 rounded bg-emerald-950/80 text-emerald-300 border border-emerald-500/30">
+                              Atendido
+                            </span>
+                          </div>
+                          <p className="text-xs text-zinc-400">{ll.motivo}</p>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
               )}
             </section>
