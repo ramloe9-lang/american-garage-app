@@ -135,16 +135,9 @@ def _obtener_cuenta_id_actual(mesa_key: str) -> str:
 
 
 def _consolidar_historial_por_cuenta_y_ronda(registros: list[RegistroEntregaOut]) -> list[dict]:
-    """Agrupa entregas parciales de la misma mesa, cuenta y ronda sin mezclar cuentas distintas."""
+    """Agrupa entregas parciales por mesa, cuenta y ronda manteniendo numeración cronológica fija."""
     agrupados: dict[tuple[str, str, int], dict] = {}
     orden_claves: list[tuple[str, str, int]] = []
-    contador_cuentas_por_mesa: dict[str, dict[str, int]] = {}
-
-    def _obtener_numero_cuenta(mesa_key: str, cuenta_key: str) -> int:
-        mapa_mesa = contador_cuentas_por_mesa.setdefault(mesa_key, {})
-        if cuenta_key not in mapa_mesa:
-            mapa_mesa[cuenta_key] = len(mapa_mesa) + 1
-        return mapa_mesa[cuenta_key]
 
     for reg in registros:
         mesa_key = str(reg.mesa).strip()
@@ -159,7 +152,6 @@ def _consolidar_historial_por_cuenta_y_ronda(registros: list[RegistroEntregaOut]
                 "mesa": mesa_key,
                 "numero_ronda": int(reg.numero_ronda),
                 "cuenta_id": cuenta_key,
-                "numero_cuenta": _obtener_numero_cuenta(mesa_key, cuenta_key),
                 "estacion": reg.estacion,
                 "items_por_id": {},
                 "listo_en": reg.listo_en,
@@ -175,6 +167,23 @@ def _consolidar_historial_por_cuenta_y_ronda(registros: list[RegistroEntregaOut]
         for it in reg.items:
             destino["items_por_id"][it.id] = it.model_dump()
 
+    # Numerar de forma cronológica (más antigua = Cuenta #1, más nueva = número mayor)
+    cronologico = sorted(
+        orden_claves,
+        key=lambda k: (agrupados[k]["listo_en"], agrupados[k]["entregado_en"]),
+    )
+    contador_cuentas_por_mesa: dict[str, dict[str, int]] = {}
+    numero_por_clave: dict[tuple[str, str, int], int] = {}
+
+    for clave in cronologico:
+        entry = agrupados[clave]
+        mesa_key = entry["mesa"]
+        cuenta_key = entry["cuenta_id"]
+        mapa_mesa = contador_cuentas_por_mesa.setdefault(mesa_key, {})
+        if cuenta_key not in mapa_mesa:
+            mapa_mesa[cuenta_key] = len(mapa_mesa) + 1
+        numero_por_clave[clave] = mapa_mesa[cuenta_key]
+
     resultado: list[dict] = []
     for clave in orden_claves:
         entry = agrupados[clave]
@@ -184,7 +193,7 @@ def _consolidar_historial_por_cuenta_y_ronda(registros: list[RegistroEntregaOut]
             "mesa": entry["mesa"],
             "numero_ronda": entry["numero_ronda"],
             "cuenta_id": entry["cuenta_id"],
-            "numero_cuenta": entry["numero_cuenta"],
+            "numero_cuenta": numero_por_clave[clave],
             "estacion": entry["estacion"],
             "items": list(entry["items_por_id"].values()),
             "listo_en": entry["listo_en"],
