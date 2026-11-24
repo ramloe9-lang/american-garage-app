@@ -246,25 +246,16 @@ export default function CocinaView() {
       }
     >();
 
-    let contadorFallback = 0;
-    const numeroPorMesaCuenta = new Map<string, number>();
-
     for (const reg of entregasConsolidadasMesas) {
       const cuentaId = reg.cuenta_id || `comanda-${reg.comanda_id}`;
       const claveCuenta = `${reg.mesa}__${cuentaId}`;
 
       if (!mapaCuentas.has(claveCuenta)) {
-        const claveContadorMesa = `${reg.mesa}`;
-        const siguienteNum =
-          reg.numero_cuenta ?? (numeroPorMesaCuenta.get(claveContadorMesa) || 0) + 1;
-        numeroPorMesaCuenta.set(claveContadorMesa, siguienteNum);
-        contadorFallback += 1;
-
         mapaCuentas.set(claveCuenta, {
           claveCuenta,
           mesa: reg.mesa,
           cuentaId,
-          numeroCuenta: siguienteNum || contadorFallback,
+          numeroCuenta: reg.numero_cuenta ?? 1,
           rondas: [],
         });
       }
@@ -272,10 +263,12 @@ export default function CocinaView() {
       mapaCuentas.get(claveCuenta)!.rondas.push(reg);
     }
 
-    return Array.from(mapaCuentas.values()).map((grupo) => ({
-      ...grupo,
-      rondas: [...grupo.rondas].sort((a, b) => a.numero_ronda - b.numero_ronda),
-    }));
+    return Array.from(mapaCuentas.values())
+      .map((grupo) => ({
+        ...grupo,
+        rondas: [...grupo.rondas].sort((a, b) => a.numero_ronda - b.numero_ronda),
+      }))
+      .sort((a, b) => a.numeroCuenta - b.numeroCuenta);
   }, [entregasConsolidadasMesas]);
 
   const totalAlertasEstatusMesas =
