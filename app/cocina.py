@@ -49,6 +49,7 @@ class ComandaOut(BaseModel):
     id: str
     mesa: str
     numero_ronda: int
+    cuenta_id: str = "default"
     creada_en: datetime
     items: list[ItemComandaOut]
     completada_total: bool = False
@@ -94,6 +95,7 @@ class RegistroEntregaOut(BaseModel):
     comanda_id: str
     mesa: str
     numero_ronda: int
+    cuenta_id: str = "default"
     estacion: FiltroEstacion
     items: list[ItemComandaOut]
     listo_en: datetime
@@ -104,6 +106,7 @@ class RegistroEntregaOut(BaseModel):
 _lock = threading.Lock()
 _comandas: list[ComandaOut] = []
 _cuentas_por_mesa: dict[str, list[dict]] = {}
+_cuenta_activa_id_por_mesa: dict[str, str] = {}
 _llamados_mesero: list[LlamadoMeseroOut] = []
 _entregas_historial: list[RegistroEntregaOut] = []
 
@@ -124,20 +127,30 @@ def _inferir_tipo(producto_id: str, categoria: str, tipo_explicito: str | None) 
     return "alimento"
 
 
-def _consolidar_historial_por_mesa_ronda(registros: list[RegistroEntregaOut]) -> list[dict]:
-    """Agrupa entregas de la misma mesa y ronda en una sola tarjeta, sin filtrar cantidades legítimas."""
-    agrupados: dict[tuple[str, int], dict] = {}
-    orden_claves: list[tuple[str, int]] = []
+def _obtener_cuenta_id_actual(mesa_key: str) -> str:
+    if mesa_key not in _cuenta_activa_id_por_mesa:
+        _cuenta_activa_id_por_mesa[mesa_key] = str(uuid.uuid4())[:8]
+    return _cuenta_activa_id_por_mesa[mesa_key]
+
+
+def _consolidar_historial_por_cuenta_y_ronda(registros: list[RegistroEntregaOut]) -> list[dict]:
+    """Agrupa entregas parciales de la misma mesa, cuenta y ronda sin mezclar cuentas distintas."""
+    agrupados: dict[tuple[str, str, int], dict] = {}
+    orden_claves: list[tuple[str, str, int]] = []
 
     for reg in registros:
-        clave = (str(reg.mesa).strip(), int(reg.numero_ronda))
+        mesa_key = str(reg.mesa).strip()
+        cuenta_key = reg.cuenta_id or reg.comanda_id
+        clave = (mesa_key, cuenta_key, int(reg.numero_ronda))
+
         if clave not in agrupados:
             orden_claves.append(clave)
             agrupados[clave] = {
-                "id": f"ronda-{clave[0]}-{clave[1]}",
+                "id": f"entrega-{reg.id}",
                 "comanda_id": reg.comanda_id,
-                "mesa": clave[0],
-                "numero_ronda": clave[1],
+                "mesa": mesa_key,
+                "numero_ronda": int(reg.numero_ronda),
+                "cuenta_id": cuenta_key,
                 "estacion": reg.estacion,
                 "items_por_id": {},
                 "listo_en": reg.listo_en,
@@ -151,7 +164,6 @@ def _consolidar_historial_por_mesa_ronda(registros: list[RegistroEntregaOut]) ->
             destino["listo_en"] = reg.listo_en
 
         for it in reg.items:
-            # Conserva cada ítem único (incluyendo 2 limonadas, sea 1 ítem con cantidad=2 o 2 ítems distintos)
             destino["items_por_id"][it.id] = it.model_dump()
 
     resultado: list[dict] = []
@@ -162,6 +174,7 @@ def _consolidar_historial_por_mesa_ronda(registros: list[RegistroEntregaOut]) ->
             "comanda_id": entry["comanda_id"],
             "mesa": entry["mesa"],
             "numero_ronda": entry["numero_ronda"],
+            "cuenta_id": entry["cuenta_id"],
             "estacion": entry["estacion"],
             "items": list(entry["items_por_id"].values()),
             "listo_en": entry["listo_en"],
@@ -177,6 +190,7 @@ router = APIRouter(prefix="/api/v1/cocina", tags=["Cocina KDS"])
 def crear_comanda(payload: NuevaComandaIn) -> ComandaOut:
     """Recibe una nueva ronda desde el menú del cliente."""
     ahora = datetime.now(timezone.utc)
+    mesa_key = payload.mesa.strip()
     items_out = [
         ItemComandaOut(
             id=str(uuid.uuid4())[:8],
@@ -192,16 +206,18 @@ def crear_comanda(payload: NuevaComandaIn) -> ComandaOut:
         )
         for it in payload.items
     ]
-    comanda = ComandaOut(
-        id=str(uuid.uuid4())[:8],
-        mesa=payload.mesa.strip(),
-        numero_ronda=payload.numero_ronda,
-        creada_en=ahora,
-        items=items_out,
-        completada_total=False,
-        ultima_actualizacion=ahora,
-    )
     with _lock:
+        cuenta_id = _obtener_cuenta_id_actual(mesa_key)
+        comanda = ComandaOut(
+            id=str(uuid.uuid4())[:8],
+            mesa=mesa_key,
+            numero_ronda=payload.numero_ronda,
+            cuenta_id=cuenta_id,
+            creada_en=ahora,
+            items=items_out,
+            completada_total=False,
+            ultima_actualizacion=ahora,
+        )
         _comandas.append(comanda)
         if len(_comandas) > 100:
             del _comandas[:-100]
@@ -279,7 +295,6 @@ def marcar_entregado_mesa(payload: EntregarMesaIn) -> RegistroEntregaOut:
                 item.entregado_en = ahora
                 copia = item.model_copy(deep=True)
                 items_a_entregar.append(copia)
-                # Solo se agregan al historial si no habían sido entregados previamente
                 if not item.ya_entregado_antes:
                     items_nuevos_para_historial.append(copia)
                 item.ya_entregado_antes = True
@@ -293,31 +308,23 @@ def marcar_entregado_mesa(payload: EntregarMesaIn) -> RegistroEntregaOut:
         fechas_listos = [it.completado_en for it in items_a_entregar if it.completado_en is not None]
         listo_en = min(fechas_listos) if fechas_listos else ahora
 
+        items_historial = items_nuevos_para_historial or items_a_entregar
+        registro = RegistroEntregaOut(
+            id=str(uuid.uuid4())[:8],
+            comanda_id=comanda.id,
+            mesa=comanda.mesa,
+            numero_ronda=comanda.numero_ronda,
+            cuenta_id=comanda.cuenta_id,
+            estacion=payload.estacion,
+            items=items_historial,
+            listo_en=listo_en,
+            entregado_en=ahora,
+        )
+
         if items_nuevos_para_historial:
-            registro = RegistroEntregaOut(
-                id=str(uuid.uuid4())[:8],
-                comanda_id=comanda.id,
-                mesa=comanda.mesa,
-                numero_ronda=comanda.numero_ronda,
-                estacion=payload.estacion,
-                items=items_nuevos_para_historial,
-                listo_en=listo_en,
-                entregado_en=ahora,
-            )
             _entregas_historial.insert(0, registro)
             if len(_entregas_historial) > 150:
                 del _entregas_historial[150:]
-        else:
-            registro = RegistroEntregaOut(
-                id=str(uuid.uuid4())[:8],
-                comanda_id=comanda.id,
-                mesa=comanda.mesa,
-                numero_ronda=comanda.numero_ronda,
-                estacion=payload.estacion,
-                items=items_a_entregar,
-                listo_en=listo_en,
-                entregado_en=ahora,
-            )
 
         comanda.ultima_actualizacion = ahora
         return registro
@@ -325,7 +332,7 @@ def marcar_entregado_mesa(payload: EntregarMesaIn) -> RegistroEntregaOut:
 
 @router.get("/estatus-mesas")
 def obtener_estatus_mesas() -> dict:
-    """Devuelve entregas listas pendientes por mesa, llamados activos y órdenes anteriores agrupadas."""
+    """Devuelve entregas listas pendientes por mesa, llamados activos y órdenes anteriores por cuenta/ronda."""
     with _lock:
         pendientes_entrega: list[dict] = []
         for c in _comandas:
@@ -349,6 +356,7 @@ def obtener_estatus_mesas() -> dict:
                 "comanda_id": c.id,
                 "mesa": c.mesa,
                 "numero_ronda": c.numero_ronda,
+                "cuenta_id": c.cuenta_id,
                 "estacion": origen,
                 "listo_en": listo_en,
                 "items": [it.model_dump() for it in listos_sin_entregar],
@@ -358,7 +366,7 @@ def obtener_estatus_mesas() -> dict:
             "entregas_pendientes": pendientes_entrega,
             "llamados_activos": [ll.model_dump() for ll in _llamados_mesero if not ll.atendido],
             "llamados_atendidos": [ll.model_dump() for ll in _llamados_mesero if ll.atendido],
-            "ordenes_anteriores": _consolidar_historial_por_mesa_ronda(_entregas_historial),
+            "ordenes_anteriores": _consolidar_historial_por_cuenta_y_ronda(_entregas_historial),
         }
 
 
@@ -423,6 +431,7 @@ def obtener_cuenta_mesa(mesa: str) -> dict:
         raise HTTPException(status_code=400, detail="Mesa inválida.")
 
     with _lock:
+        _obtener_cuenta_id_actual(mesa_key)
         rondas = list(_cuentas_por_mesa.get(mesa_key, []))
         return {
             "mesa": mesa_key,
@@ -439,6 +448,7 @@ def agregar_ronda_cuenta(mesa: str, payload: CrearRondaCuentaRequest) -> dict:
         raise HTTPException(status_code=400, detail="Mesa inválida.")
 
     with _lock:
+        _obtener_cuenta_id_actual(mesa_key)
         rondas_actuales = _cuentas_por_mesa.setdefault(mesa_key, [])
         numero_ronda = len(rondas_actuales) + 1
         nueva_ronda = {
@@ -457,11 +467,12 @@ def agregar_ronda_cuenta(mesa: str, payload: CrearRondaCuentaRequest) -> dict:
 
 @router.delete("/cuentas/{mesa}")
 def cerrar_cuenta_mesa(mesa: str) -> dict:
-    """Limpia la cuenta abierta de la mesa al finalizar cuenta."""
+    """Limpia la cuenta abierta de la mesa al finalizar cuenta e inicia un nuevo ciclo de cuenta."""
     mesa_key = str(mesa).strip()
     if not mesa_key:
         raise HTTPException(status_code=400, detail="Mesa inválida.")
 
     with _lock:
         _cuentas_por_mesa.pop(mesa_key, None)
+        _cuenta_activa_id_por_mesa[mesa_key] = str(uuid.uuid4())[:8]
         return {"mesa": mesa_key, "cerrada": True}
