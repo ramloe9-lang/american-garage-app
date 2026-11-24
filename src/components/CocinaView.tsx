@@ -16,6 +16,7 @@ export interface ItemComanda {
   completado_en: string | null;
   entregado?: boolean;
   entregado_en?: string | null;
+  ya_entregado_antes?: boolean;
 }
 
 export interface Comanda {
@@ -141,7 +142,6 @@ export default function CocinaView() {
     localStorage.setItem(STORAGE_FILTRO_KEY, vista);
   }, [vista]);
 
-  // Reloj interno para actualizar colores y barras de tiempo cada segundo
   useEffect(() => {
     const timer = window.setInterval(() => setAhoraMs(Date.now()), 1000);
     return () => window.clearInterval(timer);
@@ -186,7 +186,6 @@ export default function CocinaView() {
     [filtroEstacion]
   );
 
-  // Comandas activas que tienen al menos un ítem pendiente en la estación seleccionada
   const comandasActivas = useMemo(() => {
     return comandas
       .map((c) => ({
@@ -196,18 +195,46 @@ export default function CocinaView() {
       .filter((c) => c.itemsVisiblesPendientes.length > 0);
   }, [comandas, itemCoincideEstacion]);
 
-  // Historial reciente de cocina/barra: comandas con ítems marcados como listos en la estación actual
   const ordenesAnterioresCocina = useMemo(() => {
     return [...comandas]
       .filter((c) => c.items.some((it) => it.listo && itemCoincideEstacion(it)))
       .reverse();
   }, [comandas, itemCoincideEstacion]);
 
+  const entregasConsolidadasMesas = useMemo(() => {
+    const mapa = new Map<string, RegistroEntregaAnterior>();
+
+    for (const reg of estatusMesas.ordenes_anteriores) {
+      const clave = `${reg.mesa}__${reg.numero_ronda}`;
+      const existente = mapa.get(clave);
+      if (!existente) {
+        mapa.set(clave, {
+          ...reg,
+          items: [...reg.items],
+        });
+      } else {
+        const itemsPorId = new Map<string, ItemComanda>();
+        for (const it of existente.items) itemsPorId.set(it.id, it);
+        for (const it of reg.items) itemsPorId.set(it.id, it);
+        mapa.set(clave, {
+          ...existente,
+          items: Array.from(itemsPorId.values()),
+          entregado_en:
+            new Date(reg.entregado_en) > new Date(existente.entregado_en)
+              ? reg.entregado_en
+              : existente.entregado_en,
+        });
+      }
+    }
+
+    return Array.from(mapa.values());
+  }, [estatusMesas.ordenes_anteriores]);
+
   const totalAlertasEstatusMesas =
     estatusMesas.entregas_pendientes.length + estatusMesas.llamados_activos.length;
 
   const totalHistorialEstatusMesas =
-    estatusMesas.ordenes_anteriores.length + estatusMesas.llamados_atendidos.length;
+    entregasConsolidadasMesas.length + estatusMesas.llamados_atendidos.length;
 
   const handleMarcarListo = async (comandaId: string) => {
     try {
@@ -275,7 +302,6 @@ export default function CocinaView() {
 
   return (
     <div className="min-h-screen bg-zinc-950 text-zinc-100 p-4 md:p-6 select-none">
-      {/* Encabezado y submenús de estación + Estatus mesas */}
       <header className="flex flex-wrap items-center justify-between gap-4 pb-5 border-b border-zinc-800">
         <div>
           <h1 className="text-2xl md:text-3xl font-bold tracking-tight">
@@ -351,10 +377,8 @@ export default function CocinaView() {
         </div>
       )}
 
-      {/* VISTA ESTATUS MESAS */}
       {vista === "estatus_mesas" ? (
         <main className="mt-6 space-y-6">
-          {/* Panel de Órdenes anteriores de Estatus mesas */}
           {mostrarAnterioresMesas && (
             <section className="p-4 rounded-2xl bg-zinc-900 border border-zinc-700">
               <div className="flex items-center justify-between mb-3">
@@ -374,7 +398,7 @@ export default function CocinaView() {
                 </p>
               ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-                  {estatusMesas.ordenes_anteriores.map((reg) => (
+                  {entregasConsolidadasMesas.map((reg) => (
                     <div
                       key={reg.id}
                       className="p-3 rounded-xl bg-zinc-950 border border-zinc-800 space-y-1.5"
@@ -414,7 +438,6 @@ export default function CocinaView() {
             </section>
           )}
 
-          {/* Alertas activas de Llamar al mesero */}
           <section>
             <h2 className="text-lg font-bold text-amber-400 mb-3">
               Alertas de llamado al mesero ({estatusMesas.llamados_activos.length})
@@ -477,7 +500,6 @@ export default function CocinaView() {
             )}
           </section>
 
-          {/* Pedidos listos en cocina/barra pendientes de entrega a la mesa */}
           <section>
             <h2 className="text-lg font-bold text-emerald-400 mb-3">
               Platillos y bebidas listos para entregar ({estatusMesas.entregas_pendientes.length})
@@ -586,7 +608,6 @@ export default function CocinaView() {
         </main>
       ) : (
         <>
-          {/* Panel de Órdenes anteriores en Cocina & Barra */}
           {mostrarAnteriores && (
             <section className="mt-6 p-4 rounded-2xl bg-zinc-900 border border-zinc-700">
               <div className="flex items-center justify-between mb-3">
@@ -634,7 +655,6 @@ export default function CocinaView() {
             </section>
           )}
 
-          {/* Pantalla principal de comandas activas */}
           <main className="mt-6">
             {cargando ? (
               <div className="text-zinc-400 text-base py-12 text-center">Cargando comandas...</div>
@@ -663,7 +683,6 @@ export default function CocinaView() {
                       className={`rounded-2xl bg-zinc-900 border-2 ${tiempo.bordeTarjeta} overflow-hidden flex flex-col justify-between shadow-lg`}
                     >
                       <div>
-                        {/* Barra dinámica de tiempo */}
                         <div className="w-full h-3 bg-zinc-800">
                           <div
                             className={`h-full ${tiempo.bgBarra} transition-all duration-500`}
