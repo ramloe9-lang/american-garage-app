@@ -42,6 +42,7 @@ class ItemComandaOut(BaseModel):
     completado_en: datetime | None = None
     entregado: bool = False
     entregado_en: datetime | None = None
+    ya_entregado_antes: bool = False
 
 
 class ComandaOut(BaseModel):
@@ -123,6 +124,52 @@ def _inferir_tipo(producto_id: str, categoria: str, tipo_explicito: str | None) 
     return "alimento"
 
 
+def _consolidar_historial_por_mesa_ronda(registros: list[RegistroEntregaOut]) -> list[dict]:
+    """Agrupa entregas de la misma mesa y ronda en una sola tarjeta, sin filtrar cantidades legítimas."""
+    agrupados: dict[tuple[str, int], dict] = {}
+    orden_claves: list[tuple[str, int]] = []
+
+    for reg in registros:
+        clave = (str(reg.mesa).strip(), int(reg.numero_ronda))
+        if clave not in agrupados:
+            orden_claves.append(clave)
+            agrupados[clave] = {
+                "id": f"ronda-{clave[0]}-{clave[1]}",
+                "comanda_id": reg.comanda_id,
+                "mesa": clave[0],
+                "numero_ronda": clave[1],
+                "estacion": reg.estacion,
+                "items_por_id": {},
+                "listo_en": reg.listo_en,
+                "entregado_en": reg.entregado_en,
+            }
+
+        destino = agrupados[clave]
+        if reg.entregado_en > destino["entregado_en"]:
+            destino["entregado_en"] = reg.entregado_en
+        if reg.listo_en < destino["listo_en"]:
+            destino["listo_en"] = reg.listo_en
+
+        for it in reg.items:
+            # Conserva cada ítem único (incluyendo 2 limonadas, sea 1 ítem con cantidad=2 o 2 ítems distintos)
+            destino["items_por_id"][it.id] = it.model_dump()
+
+    resultado: list[dict] = []
+    for clave in orden_claves:
+        entry = agrupados[clave]
+        resultado.append({
+            "id": entry["id"],
+            "comanda_id": entry["comanda_id"],
+            "mesa": entry["mesa"],
+            "numero_ronda": entry["numero_ronda"],
+            "estacion": entry["estacion"],
+            "items": list(entry["items_por_id"].values()),
+            "listo_en": entry["listo_en"],
+            "entregado_en": entry["entregado_en"],
+        })
+    return resultado
+
+
 router = APIRouter(prefix="/api/v1/cocina", tags=["Cocina KDS"])
 
 
@@ -141,6 +188,7 @@ def crear_comanda(payload: NuevaComandaIn) -> ComandaOut:
             tipo=_inferir_tipo(it.producto_id, it.categoria, it.tipo),
             listo=False,
             entregado=False,
+            ya_entregado_antes=False,
         )
         for it in payload.items
     ]
@@ -200,6 +248,8 @@ def restaurar_estacion(comanda_id: str, payload: CompletarComandaIn) -> ComandaO
 
         for item in comanda.items:
             if payload.estacion == "todos" or item.tipo == payload.estacion:
+                if item.entregado:
+                    item.ya_entregado_antes = True
                 item.listo = False
                 item.completado_en = None
                 item.entregado = False
@@ -212,7 +262,7 @@ def restaurar_estacion(comanda_id: str, payload: CompletarComandaIn) -> ComandaO
 
 @router.post("/estatus-mesas/entregar", response_model=RegistroEntregaOut)
 def marcar_entregado_mesa(payload: EntregarMesaIn) -> RegistroEntregaOut:
-    """Marca como entregados a la mesa los ítems listos de la comanda/estación y los guarda en historial."""
+    """Marca como entregados a la mesa los ítems listos de la comanda/estación."""
     ahora = datetime.now(timezone.utc)
     with _lock:
         comanda = next((c for c in _comandas if c.id == payload.comanda_id), None)
@@ -220,12 +270,19 @@ def marcar_entregado_mesa(payload: EntregarMesaIn) -> RegistroEntregaOut:
             raise HTTPException(status_code=404, detail="Comanda no encontrada.")
 
         items_a_entregar: list[ItemComandaOut] = []
+        items_nuevos_para_historial: list[ItemComandaOut] = []
+
         for item in comanda.items:
             coincide_estacion = payload.estacion == "todos" or item.tipo == payload.estacion
             if coincide_estacion and item.listo and not item.entregado:
                 item.entregado = True
                 item.entregado_en = ahora
-                items_a_entregar.append(item.model_copy(deep=True))
+                copia = item.model_copy(deep=True)
+                items_a_entregar.append(copia)
+                # Solo se agregan al historial si no habían sido entregados previamente
+                if not item.ya_entregado_antes:
+                    items_nuevos_para_historial.append(copia)
+                item.ya_entregado_antes = True
 
         if not items_a_entregar:
             raise HTTPException(
@@ -236,19 +293,31 @@ def marcar_entregado_mesa(payload: EntregarMesaIn) -> RegistroEntregaOut:
         fechas_listos = [it.completado_en for it in items_a_entregar if it.completado_en is not None]
         listo_en = min(fechas_listos) if fechas_listos else ahora
 
-        registro = RegistroEntregaOut(
-            id=str(uuid.uuid4())[:8],
-            comanda_id=comanda.id,
-            mesa=comanda.mesa,
-            numero_ronda=comanda.numero_ronda,
-            estacion=payload.estacion,
-            items=items_a_entregar,
-            listo_en=listo_en,
-            entregado_en=ahora,
-        )
-        _entregas_historial.insert(0, registro)
-        if len(_entregas_historial) > 150:
-            del _entregas_historial[150:]
+        if items_nuevos_para_historial:
+            registro = RegistroEntregaOut(
+                id=str(uuid.uuid4())[:8],
+                comanda_id=comanda.id,
+                mesa=comanda.mesa,
+                numero_ronda=comanda.numero_ronda,
+                estacion=payload.estacion,
+                items=items_nuevos_para_historial,
+                listo_en=listo_en,
+                entregado_en=ahora,
+            )
+            _entregas_historial.insert(0, registro)
+            if len(_entregas_historial) > 150:
+                del _entregas_historial[150:]
+        else:
+            registro = RegistroEntregaOut(
+                id=str(uuid.uuid4())[:8],
+                comanda_id=comanda.id,
+                mesa=comanda.mesa,
+                numero_ronda=comanda.numero_ronda,
+                estacion=payload.estacion,
+                items=items_a_entregar,
+                listo_en=listo_en,
+                entregado_en=ahora,
+            )
 
         comanda.ultima_actualizacion = ahora
         return registro
@@ -256,7 +325,7 @@ def marcar_entregado_mesa(payload: EntregarMesaIn) -> RegistroEntregaOut:
 
 @router.get("/estatus-mesas")
 def obtener_estatus_mesas() -> dict:
-    """Devuelve entregas listas pendientes por mesa, llamados activos y órdenes anteriores de estatus mesas."""
+    """Devuelve entregas listas pendientes por mesa, llamados activos y órdenes anteriores agrupadas."""
     with _lock:
         pendientes_entrega: list[dict] = []
         for c in _comandas:
@@ -289,7 +358,7 @@ def obtener_estatus_mesas() -> dict:
             "entregas_pendientes": pendientes_entrega,
             "llamados_activos": [ll.model_dump() for ll in _llamados_mesero if not ll.atendido],
             "llamados_atendidos": [ll.model_dump() for ll in _llamados_mesero if ll.atendido],
-            "ordenes_anteriores": [reg.model_dump() for reg in _entregas_historial],
+            "ordenes_anteriores": _consolidar_historial_por_mesa_ronda(_entregas_historial),
         }
 
 
@@ -302,7 +371,6 @@ def llamar_mesero(payload: LlamarMeseroIn) -> LlamadoMeseroOut:
 
     ahora = datetime.now(timezone.utc)
     with _lock:
-        # Si ya existe un llamado activo sin atender para la misma mesa, actualizamos su hora
         existente = next(
             (ll for ll in _llamados_mesero if ll.mesa == mesa_key and not ll.atendido),
             None,
