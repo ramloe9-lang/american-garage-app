@@ -582,3 +582,83 @@ def listar_cuentas_pagadas() -> list[CuentaPagadaOut]:
     """Devuelve el historial de cuentas pagadas (base para el resumen del día)."""
     with _lock:
         return list(_cuentas_pagadas)
+
+
+@router.get("/resumen-dia")
+def obtener_resumen_dia() -> dict:
+    """Calcula el resumen del día a partir de las cuentas pagadas."""
+    with _lock:
+        hoy_utc = datetime.now(timezone.utc).date()
+        cuentas_hoy = [c for c in _cuentas_pagadas if c.pagada_en.date() == hoy_utc]
+        base_cuentas = cuentas_hoy if cuentas_hoy else list(_cuentas_pagadas)
+
+        subtotal_ventas = round(sum(float(c.subtotal) for c in base_cuentas), 2)
+        propinas_totales = round(sum(float(c.propina) for c in base_cuentas), 2)
+        total_general = round(sum(float(c.total_final) for c in base_cuentas), 2)
+
+        total_efectivo = round(
+            sum(float(c.total_final) for c in base_cuentas if c.metodo_pago == "efectivo"), 2
+        )
+        total_tarjeta = round(
+            sum(float(c.total_final) for c in base_cuentas if c.metodo_pago == "tarjeta"), 2
+        )
+
+        conteo_general: dict[str, dict] = {}
+        conteo_alimento: dict[str, dict] = {}
+        conteo_bebida: dict[str, dict] = {}
+        conteo_combo: dict[str, dict] = {}
+
+        for cuenta in base_cuentas:
+            for ronda in cuenta.rondas:
+                for item in ronda.get("items", []):
+                    nombre = str(item.get("nombre", "")).strip()
+                    if not nombre:
+                        continue
+                    cantidad = int(item.get("cantidad", 0))
+                    categoria = str(item.get("categoria", "")).strip()
+                    producto_id = str(item.get("producto_id", "")).strip()
+                    es_combo = "combo" in categoria.lower() or "combo" in nombre.lower()
+                    tipo_item = _inferir_tipo(producto_id, categoria, None)
+
+                    clave = nombre.lower()
+                    entry_gen = conteo_general.setdefault(clave, {"nombre": nombre, "cantidad": 0})
+                    entry_gen["cantidad"] += cantidad
+
+                    if es_combo:
+                        entry_cbo = conteo_combo.setdefault(clave, {"nombre": nombre, "cantidad": 0})
+                        entry_cbo["cantidad"] += cantidad
+
+                    if tipo_item == "bebida":
+                        entry_beb = conteo_bebida.setdefault(clave, {"nombre": nombre, "cantidad": 0})
+                        entry_beb["cantidad"] += cantidad
+                    else:
+                        entry_ali = conteo_alimento.setdefault(clave, {"nombre": nombre, "cantidad": 0})
+                        entry_ali["cantidad"] += cantidad
+
+        def _mas_vendido(dic: dict[str, dict]) -> dict | None:
+            if not dic:
+                return None
+            ganador = max(dic.values(), key=lambda x: x["cantidad"])
+            return ganador if ganador["cantidad"] > 0 else None
+
+        return {
+            "cantidad_cuentas": len(base_cuentas),
+            "subtotal_ventas": subtotal_ventas,
+            "propinas_totales": propinas_totales,
+            "total_general": total_general,
+            "total_efectivo": total_efectivo,
+            "total_tarjeta": total_tarjeta,
+            "producto_mas_vendido": _mas_vendido(conteo_general),
+            "alimento_mas_vendido": _mas_vendido(conteo_alimento),
+            "bebida_mas_vendido": _mas_vendido(conteo_bebida),
+            "combo_mas_vendido": _mas_vendido(conteo_combo),
+        }
+
+
+@router.post("/cerrar-dia")
+def cerrar_dia_actual() -> dict:
+    """Limpia el historial de cuentas pagadas del corte actual para iniciar un nuevo día."""
+    with _lock:
+        total_cerradas = len(_cuentas_pagadas)
+        _cuentas_pagadas.clear()
+        return {"cerrado": True, "cuentas_cerradas": total_cerradas}
