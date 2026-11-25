@@ -4,7 +4,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import Literal
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Body, HTTPException
 from pydantic import BaseModel, Field
 
 TipoEstacion = Literal["alimento", "bebida"]
@@ -78,6 +78,7 @@ class CuentaPorCobrarOut(BaseModel):
     cuenta_id: str
     rondas: list[dict]
     subtotal: float
+    metodo_pago: MetodoPago = "efectivo"
     solicitada_en: datetime
 
 
@@ -514,11 +515,21 @@ def agregar_ronda_cuenta(mesa: str, payload: CrearRondaCuentaRequest) -> dict:
 
 
 @router.delete("/cuentas/{mesa}")
-def cerrar_cuenta_mesa(mesa: str) -> dict:
+def cerrar_cuenta_mesa(
+    mesa: str,
+    metodo_pago: MetodoPago | None = None,
+    payload: dict | None = Body(default=None),
+) -> dict:
     """Envía el resumen de la cuenta a Cuentas por Cobrar, limpia la mesa e inicia nuevo ciclo."""
     mesa_key = str(mesa).strip()
     if not mesa_key:
         raise HTTPException(status_code=400, detail="Mesa inválida.")
+
+    pago_elegido: MetodoPago = "efectivo"
+    if metodo_pago in ("efectivo", "tarjeta"):
+        pago_elegido = metodo_pago
+    elif isinstance(payload, dict) and payload.get("metodo_pago") in ("efectivo", "tarjeta"):
+        pago_elegido = payload["metodo_pago"]  # type: ignore[assignment]
 
     ahora = datetime.now(timezone.utc)
     with _lock:
@@ -533,12 +544,13 @@ def cerrar_cuenta_mesa(mesa: str) -> dict:
                 cuenta_id=cuenta_id_cerrada,
                 rondas=list(rondas_cerradas),
                 subtotal=subtotal,
+                metodo_pago=pago_elegido,
                 solicitada_en=ahora,
             )
             _cuentas_por_cobrar.insert(0, cuenta_cobro)
 
         _cuenta_activa_id_por_mesa[mesa_key] = str(uuid.uuid4())[:8]
-        return {"mesa": mesa_key, "cerrada": True}
+        return {"mesa": mesa_key, "cerrada": True, "metodo_pago": pago_elegido}
 
 
 @router.get("/cuentas-por-cobrar", response_model=list[CuentaPorCobrarOut])
@@ -657,8 +669,14 @@ def obtener_resumen_dia() -> dict:
 
 @router.post("/cerrar-dia")
 def cerrar_dia_actual() -> dict:
-    """Limpia el historial de cuentas pagadas del corte actual para iniciar un nuevo día."""
+    """Reinicia absolutamente todo el estado de cocina, estatus de mesas, cuentas y ventas del día."""
     with _lock:
         total_cerradas = len(_cuentas_pagadas)
         _cuentas_pagadas.clear()
+        _cuentas_por_cobrar.clear()
+        _cuentas_por_mesa.clear()
+        _cuenta_activa_id_por_mesa.clear()
+        _comandas.clear()
+        _entregas_historial.clear()
+        _llamados_mesero.clear()
         return {"cerrado": True, "cuentas_cerradas": total_cerradas}
