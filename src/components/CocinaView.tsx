@@ -1,584 +1,1170 @@
-"""Módulo de Comandas y Kitchen Display System (KDS) para /cocina."""
-import threading
-import uuid
-from datetime import datetime, timezone
-from typing import Literal
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 
-from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel, Field
+export type TipoEstacion = "alimento" | "bebida";
+export type FiltroEstacion = "todos" | "alimento" | "bebida";
+export type VistaActiva = FiltroEstacion | "estatus_mesas" | "cuentas";
+export type MetodoPago = "efectivo" | "tarjeta";
 
-TipoEstacion = Literal["alimento", "bebida"]
-FiltroEstacion = Literal["todos", "alimento", "bebida"]
-MetodoPago = Literal["efectivo", "tarjeta"]
-
-
-class ItemComandaIn(BaseModel):
-    producto_id: str
-    nombre: str
-    cantidad: int = Field(ge=1)
-    categoria: str = ""
-    notas: str | None = None
-    tipo: TipoEstacion | None = None
-
-
-class NuevaComandaIn(BaseModel):
-    mesa: str
-    numero_ronda: int = Field(default=1, ge=1)
-    items: list[ItemComandaIn] = Field(min_length=1)
-
-
-class CompletarComandaIn(BaseModel):
-    estacion: FiltroEstacion = "todos"
-
-
-class ItemComandaOut(BaseModel):
-    id: str
-    producto_id: str
-    nombre: str
-    cantidad: int
-    categoria: str
-    notas: str | None
-    tipo: TipoEstacion
-    listo: bool = False
-    completado_en: datetime | None = None
-    entregado: bool = False
-    entregado_en: datetime | None = None
-    ya_entregado_antes: bool = False
-
-
-class ComandaOut(BaseModel):
-    id: str
-    mesa: str
-    numero_ronda: int
-    cuenta_id: str = "default"
-    creada_en: datetime
-    items: list[ItemComandaOut]
-    completada_total: bool = False
-    ultima_actualizacion: datetime
-
-
-class ItemRondaCuenta(BaseModel):
-    producto_id: str
-    nombre: str
-    categoria: str = ""
-    precio: float = Field(ge=0)
-    cantidad: int = Field(ge=1)
-    comentarios: str = ""
-    subtotal: float = Field(ge=0)
-
-
-class CrearRondaCuentaRequest(BaseModel):
-    items: list[ItemRondaCuenta] = Field(min_length=1)
-    subtotal_ronda: float = Field(ge=0)
-
-
-class CuentaPorCobrarOut(BaseModel):
-    id: str
-    mesa: str
-    cuenta_id: str
-    rondas: list[dict]
-    subtotal: float
-    solicitada_en: datetime
-
-
-class PagarCuentaIn(BaseModel):
-    metodo_pago: MetodoPago
-    propina: float = Field(default=0, ge=0)
-
-
-class CuentaPagadaOut(BaseModel):
-    id: str
-    mesa: str
-    cuenta_id: str
-    rondas: list[dict]
-    subtotal: float
-    propina: float
-    total_final: float
-    metodo_pago: MetodoPago
-    solicitada_en: datetime
-    pagada_en: datetime
-
-
-class LlamarMeseroIn(BaseModel):
-    mesa: str
-    motivo: str = "Atención en mesa"
-
-
-class LlamadoMeseroOut(BaseModel):
-    id: str
-    mesa: str
-    motivo: str
-    creado_en: datetime
-    atendido: bool = False
-    atendido_en: datetime | None = None
-
-
-class EntregarMesaIn(BaseModel):
-    comanda_id: str
-    estacion: FiltroEstacion = "todos"
-
-
-class RegistroEntregaOut(BaseModel):
-    id: str
-    comanda_id: str
-    mesa: str
-    numero_ronda: int
-    cuenta_id: str = "default"
-    numero_cuenta: int = 1
-    estacion: FiltroEstacion
-    items: list[ItemComandaOut]
-    listo_en: datetime
-    entregado_en: datetime
-
-
-# Almacenamiento en memoria protegido con Lock
-_lock = threading.Lock()
-_comandas: list[ComandaOut] = []
-_cuentas_por_mesa: dict[str, list[dict]] = {}
-_cuenta_activa_id_por_mesa: dict[str, str] = {}
-_cuentas_por_cobrar: list[CuentaPorCobrarOut] = []
-_cuentas_pagadas: list[CuentaPagadaOut] = []
-_llamados_mesero: list[LlamadoMeseroOut] = []
-_entregas_historial: list[RegistroEntregaOut] = []
-
-CATEGORIAS_BEBIDA = {
-    "bebida", "bebidas", "cafe", "café", "refresco", "refrescos",
-    "te", "té", "malteada", "malteadas", "cerveza", "cervezas",
-    "jugo", "jugos", "agua", "aguas", "limonada", "coctel", "cóctel",
+export interface ItemComanda {
+  id: string;
+  producto_id: string;
+  nombre: string;
+  cantidad: number;
+  categoria: string;
+  notas: string | null;
+  tipo: TipoEstacion;
+  listo: boolean;
+  completado_en: string | null;
+  entregado?: boolean;
+  entregado_en?: string | null;
+  ya_entregado_antes?: boolean;
 }
 
+export interface Comanda {
+  id: string;
+  mesa: string;
+  numero_ronda: number;
+  cuenta_id?: string;
+  creada_en: string;
+  items: ItemComanda[];
+  completada_total: boolean;
+  ultima_actualizacion: string;
+}
 
-def _inferir_tipo(producto_id: str, categoria: str, tipo_explicito: str | None) -> TipoEstacion:
-    if tipo_explicito in ("alimento", "bebida"):
-        return tipo_explicito  # type: ignore[return-value]
-    if producto_id.strip().upper().startswith("BEB"):
-        return "bebida"
-    if categoria.strip().lower() in CATEGORIAS_BEBIDA:
-        return "bebida"
-    return "alimento"
+export interface EntregaPendienteMesa {
+  id: string;
+  comanda_id: string;
+  mesa: string;
+  numero_ronda: number;
+  cuenta_id?: string;
+  estacion: FiltroEstacion;
+  listo_en: string;
+  items: ItemComanda[];
+}
 
+export interface LlamadoMesero {
+  id: string;
+  mesa: string;
+  motivo: string;
+  creado_en: string;
+  atendido: boolean;
+  atendido_en: string | null;
+}
 
-def _obtener_cuenta_id_actual(mesa_key: str) -> str:
-    if mesa_key not in _cuenta_activa_id_por_mesa:
-        _cuenta_activa_id_por_mesa[mesa_key] = str(uuid.uuid4())[:8]
-    return _cuenta_activa_id_por_mesa[mesa_key]
+export interface RegistroEntregaAnterior {
+  id: string;
+  comanda_id: string;
+  mesa: string;
+  numero_ronda: number;
+  cuenta_id?: string;
+  numero_cuenta?: number;
+  estacion: FiltroEstacion;
+  items: ItemComanda[];
+  listo_en: string;
+  entregado_en: string;
+}
 
+export interface EstatusMesasResponse {
+  entregas_pendientes: EntregaPendienteMesa[];
+  llamados_activos: LlamadoMesero[];
+  llamados_atendidos: LlamadoMesero[];
+  ordenes_anteriores: RegistroEntregaAnterior[];
+}
 
-def _consolidar_historial_por_cuenta_y_ronda(registros: list[RegistroEntregaOut]) -> list[dict]:
-    """Agrupa entregas parciales por mesa, cuenta y ronda manteniendo numeración cronológica fija."""
-    agrupados: dict[tuple[str, str, int], dict] = {}
-    orden_claves: list[tuple[str, str, int]] = []
+export interface ItemRondaCuentaCobro {
+  producto_id: string;
+  nombre: string;
+  categoria: string;
+  precio: number;
+  cantidad: number;
+  comentarios?: string;
+  subtotal: number;
+}
 
-    for reg in registros:
-        mesa_key = str(reg.mesa).strip()
-        cuenta_key = reg.cuenta_id or reg.comanda_id
-        clave = (mesa_key, cuenta_key, int(reg.numero_ronda))
+export interface RondaCuentaCobro {
+  numeroRonda: number;
+  items: ItemRondaCuentaCobro[];
+  subtotalRonda: number;
+  confirmadaEn?: string;
+}
 
-        if clave not in agrupados:
-            orden_claves.append(clave)
-            agrupados[clave] = {
-                "id": f"entrega-{reg.id}",
-                "comanda_id": reg.comanda_id,
-                "mesa": mesa_key,
-                "numero_ronda": int(reg.numero_ronda),
-                "cuenta_id": cuenta_key,
-                "estacion": reg.estacion,
-                "items_por_id": {},
-                "listo_en": reg.listo_en,
-                "entregado_en": reg.entregado_en,
-            }
+export interface CuentaPorCobrar {
+  id: string;
+  mesa: string;
+  cuenta_id: string;
+  rondas: RondaCuentaCobro[];
+  subtotal: number;
+  solicitada_en: string;
+}
 
-        destino = agrupados[clave]
-        if reg.entregado_en > destino["entregado_en"]:
-            destino["entregado_en"] = reg.entregado_en
-        if reg.listo_en < destino["listo_en"]:
-            destino["listo_en"] = reg.listo_en
+interface EstadoCobroLocal {
+  propinaMonto: number;
+  tipoPropina: "ninguna" | "10" | "20" | "perso";
+  montoPersoTexto: string;
+  metodoPago: MetodoPago;
+}
 
-        for it in reg.items:
-            destino["items_por_id"][it.id] = it.model_dump()
+const API_BASE =
+  (import.meta as unknown as { env?: Record<string, string> }).env?.VITE_API_URL ||
+  "https://american-garage-app.onrender.com";
 
-    cronologico = sorted(
-        orden_claves,
-        key=lambda k: (agrupados[k]["listo_en"], agrupados[k]["entregado_en"]),
-    )
-    contador_cuentas_por_mesa: dict[str, dict[str, int]] = {}
-    numero_por_clave: dict[tuple[str, str, int], int] = {}
+const STORAGE_FILTRO_KEY = "visiak_cocina_filtro_estacion";
 
-    for clave in cronologico:
-        entry = agrupados[clave]
-        mesa_key = entry["mesa"]
-        cuenta_key = entry["cuenta_id"]
-        mapa_mesa = contador_cuentas_por_mesa.setdefault(mesa_key, {})
-        if cuenta_key not in mapa_mesa:
-            mapa_mesa[cuenta_key] = len(mapa_mesa) + 1
-        numero_por_clave[clave] = mapa_mesa[cuenta_key]
+function formatoMoneda(valor: number): string {
+  return valor.toLocaleString("es-MX", {
+    style: "currency",
+    currency: "MXN",
+    minimumFractionDigits: 2,
+  });
+}
 
-    resultado: list[dict] = []
-    for clave in orden_claves:
-        entry = agrupados[clave]
-        resultado.append({
-            "id": entry["id"],
-            "comanda_id": entry["comanda_id"],
-            "mesa": entry["mesa"],
-            "numero_ronda": entry["numero_ronda"],
-            "cuenta_id": entry["cuenta_id"],
-            "numero_cuenta": numero_por_clave[clave],
-            "estacion": entry["estacion"],
-            "items": list(entry["items_por_id"].values()),
-            "listo_en": entry["listo_en"],
-            "entregado_en": entry["entregado_en"],
-        })
-    return resultado
+function obtenerEstadoTiempo(
+  fechaIso: string,
+  ahoraMs: number,
+  umbrales: { verdeMaxMin: number; amarilloMaxMin: number }
+) {
+  const inicioMs = new Date(fechaIso).getTime();
+  const minutos = Math.max(0, Math.floor((ahoraMs - inicioMs) / 60000));
+  const totalUmbral = Math.max(1, umbrales.amarilloMaxMin);
 
+  if (minutos < umbrales.verdeMaxMin) {
+    return {
+      minutos,
+      label: `${minutos} min`,
+      bgBarra: "bg-emerald-500",
+      bordeTarjeta: "border-emerald-500/50",
+      badgeTexto: "text-emerald-300 bg-emerald-950/70",
+      porcentaje: Math.min(100, Math.max(10, (minutos / Math.max(1, umbrales.verdeMaxMin)) * 100)),
+    };
+  }
+  if (minutos < umbrales.amarilloMaxMin) {
+    const rango = Math.max(1, umbrales.amarilloMaxMin - umbrales.verdeMaxMin);
+    return {
+      minutos,
+      label: `${minutos} min`,
+      bgBarra: "bg-amber-400",
+      bordeTarjeta: "border-amber-400/60",
+      badgeTexto: "text-amber-300 bg-amber-950/70",
+      porcentaje: Math.min(100, Math.max(25, ((minutos - umbrales.verdeMaxMin) / rango) * 100)),
+    };
+  }
+  return {
+    minutos,
+    label: `${minutos} min`,
+    bgBarra: "bg-rose-500",
+    bordeTarjeta: "border-rose-500/70",
+    badgeTexto: "text-rose-300 bg-rose-950/70",
+    porcentaje: Math.min(100, Math.max(85, (minutos / totalUmbral) * 100)),
+  };
+}
 
-router = APIRouter(prefix="/api/v1/cocina", tags=["Cocina KDS"])
+export default function CocinaView() {
+  const [vista, setVista] = useState<VistaActiva>(() => {
+    const guardado = localStorage.getItem(STORAGE_FILTRO_KEY);
+    return guardado === "alimento" ||
+      guardado === "bebida" ||
+      guardado === "todos" ||
+      guardado === "estatus_mesas" ||
+      guardado === "cuentas"
+      ? guardado
+      : "todos";
+  });
 
+  const filtroEstacion: FiltroEstacion =
+    vista === "estatus_mesas" || vista === "cuentas" ? "todos" : vista;
 
-@router.post("/comandas", response_model=ComandaOut, status_code=201)
-def crear_comanda(payload: NuevaComandaIn) -> ComandaOut:
-    """Recibe una nueva ronda desde el menú del cliente."""
-    ahora = datetime.now(timezone.utc)
-    mesa_key = payload.mesa.strip()
-    items_out = [
-        ItemComandaOut(
-            id=str(uuid.uuid4())[:8],
-            producto_id=it.producto_id,
-            nombre=it.nombre,
-            cantidad=it.cantidad,
-            categoria=it.categoria,
-            notas=it.notas.strip() if it.notas and it.notas.strip() else None,
-            tipo=_inferir_tipo(it.producto_id, it.categoria, it.tipo),
-            listo=False,
-            entregado=False,
-            ya_entregado_antes=False,
-        )
-        for it in payload.items
-    ]
-    with _lock:
-        cuenta_id = _obtener_cuenta_id_actual(mesa_key)
-        comanda = ComandaOut(
-            id=str(uuid.uuid4())[:8],
-            mesa=mesa_key,
-            numero_ronda=payload.numero_ronda,
-            cuenta_id=cuenta_id,
-            creada_en=ahora,
-            items=items_out,
-            completada_total=False,
-            ultima_actualizacion=ahora,
-        )
-        _comandas.append(comanda)
-        if len(_comandas) > 100:
-            del _comandas[:-100]
-    return comanda
+  const [comandas, setComandas] = useState<Comanda[]>([]);
+  const [estatusMesas, setEstatusMesas] = useState<EstatusMesasResponse>({
+    entregas_pendientes: [],
+    llamados_activos: [],
+    llamados_atendidos: [],
+    ordenes_anteriores: [],
+  });
+  const [cuentasPorCobrar, setCuentasPorCobrar] = useState<CuentaPorCobrar[]>([]);
+  const [cobroPorCuentaId, setCobroPorCuentaId] = useState<Record<string, EstadoCobroLocal>>({});
+  const [pagandoId, setPagandoId] = useState<string | null>(null);
 
+  const [cargando, setCargando] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [mostrarAnteriores, setMostrarAnteriores] = useState(false);
+  const [mostrarAnterioresMesas, setMostrarAnterioresMesas] = useState(false);
+  const [ahoraMs, setAhoraMs] = useState(() => Date.now());
 
-@router.get("/comandas", response_model=list[ComandaOut])
-def listar_comandas(incluir_completadas: bool = True) -> list[ComandaOut]:
-    """Devuelve las comandas ordenadas de más antigua a más reciente."""
-    with _lock:
-        if incluir_completadas:
-            return list(_comandas)
-        return [c for c in _comandas if not c.completada_total]
+  useEffect(() => {
+    localStorage.setItem(STORAGE_FILTRO_KEY, vista);
+  }, [vista]);
 
+  useEffect(() => {
+    const timer = window.setInterval(() => setAhoraMs(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, []);
 
-@router.patch("/comandas/{comanda_id}/completar", response_model=ComandaOut)
-def completar_estacion(comanda_id: str, payload: CompletarComandaIn) -> ComandaOut:
-    """Marca como listos únicamente los ítems visibles en la estación indicada."""
-    ahora = datetime.now(timezone.utc)
-    with _lock:
-        comanda = next((c for c in _comandas if c.id == comanda_id), None)
-        if not comanda:
-            raise HTTPException(status_code=404, detail="Comanda no encontrada.")
+  const cargarTodo = useCallback(async () => {
+    try {
+      const [resComandas, resMesas, resCuentas] = await Promise.all([
+        fetch(`${API_BASE}/api/v1/cocina/comandas?incluir_completadas=true&t=${Date.now()}`, {
+          cache: "no-store",
+        }),
+        fetch(`${API_BASE}/api/v1/cocina/estatus-mesas?t=${Date.now()}`, {
+          cache: "no-store",
+        }),
+        fetch(`${API_BASE}/api/v1/cocina/cuentas-por-cobrar?t=${Date.now()}`, {
+          cache: "no-store",
+        }),
+      ]);
 
-        for item in comanda.items:
-            if payload.estacion == "todos" or item.tipo == payload.estacion:
-                if not item.listo:
-                    item.listo = True
-                    item.completado_en = ahora
+      if (!resComandas.ok) throw new Error(`HTTP ${resComandas.status}`);
+      const dataComandas: Comanda[] = await resComandas.json();
+      setComandas(dataComandas);
 
-        comanda.completada_total = all(i.listo for i in comanda.items)
-        comanda.ultima_actualizacion = ahora
-        return comanda
+      if (resMesas.ok) {
+        const dataMesas: EstatusMesasResponse = await resMesas.json();
+        setEstatusMesas(dataMesas);
+      }
 
+      if (resCuentas.ok) {
+        const dataCuentas: CuentaPorCobrar[] = await resCuentas.json();
+        setCuentasPorCobrar(dataCuentas);
+      }
 
-@router.patch("/comandas/{comanda_id}/restaurar", response_model=ComandaOut)
-def restaurar_estacion(comanda_id: str, payload: CompletarComandaIn) -> ComandaOut:
-    """Devuelve a pendiente los ítems de la estación (por si se marcó listo por error)."""
-    ahora = datetime.now(timezone.utc)
-    with _lock:
-        comanda = next((c for c in _comandas if c.id == comanda_id), None)
-        if not comanda:
-            raise HTTPException(status_code=404, detail="Comanda no encontrada.")
+      setError(null);
+    } catch {
+      setError("No se pudieron sincronizar los datos con el servidor.");
+    } finally {
+      setCargando(false);
+    }
+  }, []);
 
-        for item in comanda.items:
-            if payload.estacion == "todos" or item.tipo == payload.estacion:
-                if item.entregado:
-                    item.ya_entregado_antes = True
-                item.listo = False
-                item.completado_en = None
-                item.entregado = False
-                item.entregado_en = None
+  useEffect(() => {
+    cargarTodo();
+    const polling = window.setInterval(cargarTodo, 3000);
+    return () => window.clearInterval(polling);
+  }, [cargarTodo]);
 
-        comanda.completada_total = all(i.listo for i in comanda.items)
-        comanda.ultima_actualizacion = ahora
-        return comanda
+  const itemCoincideEstacion = useCallback(
+    (item: ItemComanda) => filtroEstacion === "todos" || item.tipo === filtroEstacion,
+    [filtroEstacion]
+  );
 
+  const comandasActivas = useMemo(() => {
+    return comandas
+      .map((c) => ({
+        ...c,
+        itemsVisiblesPendientes: c.items.filter((it) => !it.listo && itemCoincideEstacion(it)),
+      }))
+      .filter((c) => c.itemsVisiblesPendientes.length > 0);
+  }, [comandas, itemCoincideEstacion]);
 
-@router.post("/estatus-mesas/entregar", response_model=RegistroEntregaOut)
-def marcar_entregado_mesa(payload: EntregarMesaIn) -> RegistroEntregaOut:
-    """Marca como entregados a la mesa los ítems listos de la comanda/estación."""
-    ahora = datetime.now(timezone.utc)
-    with _lock:
-        comanda = next((c for c in _comandas if c.id == payload.comanda_id), None)
-        if not comanda:
-            raise HTTPException(status_code=404, detail="Comanda no encontrada.")
+  const ordenesAnterioresCocina = useMemo(() => {
+    return [...comandas]
+      .filter((c) => c.items.some((it) => it.listo && itemCoincideEstacion(it)))
+      .reverse();
+  }, [comandas, itemCoincideEstacion]);
 
-        items_a_entregar: list[ItemComandaOut] = []
-        items_nuevos_para_historial: list[ItemComandaOut] = []
+  const entregasConsolidadasMesas = useMemo(() => {
+    const mapa = new Map<string, RegistroEntregaAnterior>();
 
-        for item in comanda.items:
-            coincide_estacion = payload.estacion == "todos" or item.tipo == payload.estacion
-            if coincide_estacion and item.listo and not item.entregado:
-                item.entregado = True
-                item.entregado_en = ahora
-                copia = item.model_copy(deep=True)
-                items_a_entregar.append(copia)
-                if not item.ya_entregado_antes:
-                    items_nuevos_para_historial.append(copia)
-                item.ya_entregado_antes = True
+    for (const reg of estatusMesas.ordenes_anteriores) {
+      const clave = `${reg.mesa}__${reg.cuenta_id || reg.comanda_id}__${reg.numero_ronda}`;
+      const existente = mapa.get(clave);
+      if (!existente) {
+        mapa.set(clave, {
+          ...reg,
+          items: [...reg.items],
+        });
+      } else {
+        const itemsPorId = new Map<string, ItemComanda>();
+        for (const it of existente.items) itemsPorId.set(it.id, it);
+        for (const it of reg.items) itemsPorId.set(it.id, it);
+        mapa.set(clave, {
+          ...existente,
+          items: Array.from(itemsPorId.values()),
+          entregado_en:
+            new Date(reg.entregado_en) > new Date(existente.entregado_en)
+              ? reg.entregado_en
+              : existente.entregado_en,
+        });
+      }
+    }
 
-        if not items_a_entregar:
-            raise HTTPException(
-                status_code=400,
-                detail="No hay ítems listos pendientes de entrega para esta estación.",
-            )
+    return Array.from(mapa.values());
+  }, [estatusMesas.ordenes_anteriores]);
 
-        fechas_listos = [it.completado_en for it in items_a_entregar if it.completado_en is not None]
-        listo_en = min(fechas_listos) if fechas_listos else ahora
+  const cuentasAgrupadasMesas = useMemo(() => {
+    const mapaCuentas = new Map<
+      string,
+      {
+        claveCuenta: string;
+        mesa: string;
+        cuentaId: string;
+        numeroCuenta: number;
+        rondas: RegistroEntregaAnterior[];
+      }
+    >();
 
-        items_historial = items_nuevos_para_historial or items_a_entregar
-        registro = RegistroEntregaOut(
-            id=str(uuid.uuid4())[:8],
-            comanda_id=comanda.id,
-            mesa=comanda.mesa,
-            numero_ronda=comanda.numero_ronda,
-            cuenta_id=comanda.cuenta_id,
-            estacion=payload.estacion,
-            items=items_historial,
-            listo_en=listo_en,
-            entregado_en=ahora,
-        )
+    for (const reg of entregasConsolidadasMesas) {
+      const cuentaId = reg.cuenta_id || `comanda-${reg.comanda_id}`;
+      const claveCuenta = `${reg.mesa}__${cuentaId}`;
 
-        if items_nuevos_para_historial:
-            _entregas_historial.insert(0, registro)
-            if len(_entregas_historial) > 150:
-                del _entregas_historial[150:]
+      if (!mapaCuentas.has(claveCuenta)) {
+        mapaCuentas.set(claveCuenta, {
+          claveCuenta,
+          mesa: reg.mesa,
+          cuentaId,
+          numeroCuenta: reg.numero_cuenta ?? 1,
+          rondas: [],
+        });
+      }
 
-        comanda.ultima_actualizacion = ahora
-        return registro
+      mapaCuentas.get(claveCuenta)!.rondas.push(reg);
+    }
 
+    return Array.from(mapaCuentas.values())
+      .map((grupo) => ({
+        ...grupo,
+        rondas: [...grupo.rondas].sort((a, b) => a.numero_ronda - b.numero_ronda),
+      }))
+      .sort((a, b) => a.numeroCuenta - b.numeroCuenta);
+  }, [entregasConsolidadasMesas]);
 
-@router.get("/estatus-mesas")
-def obtener_estatus_mesas() -> dict:
-    """Devuelve entregas listas pendientes por mesa, llamados activos y órdenes anteriores por cuenta/ronda."""
-    with _lock:
-        pendientes_entrega: list[dict] = []
-        for c in _comandas:
-            listos_sin_entregar = [it for it in c.items if it.listo and not it.entregado]
-            if not listos_sin_entregar:
-                continue
+  const totalAlertasEstatusMesas =
+    estatusMesas.entregas_pendientes.length + estatusMesas.llamados_activos.length;
 
-            tipos_presentes = {it.tipo for it in listos_sin_entregar}
-            if tipos_presentes == {"alimento"}:
-                origen: FiltroEstacion = "alimento"
-            elif tipos_presentes == {"bebida"}:
-                origen = "bebida"
-            else:
-                origen = "todos"
+  const totalHistorialEstatusMesas =
+    entregasConsolidadasMesas.length + estatusMesas.llamados_atendidos.length;
 
-            fechas_listos = [it.completado_en for it in listos_sin_entregar if it.completado_en is not None]
-            listo_en = min(fechas_listos) if fechas_listos else c.ultima_actualizacion
+  const getEstadoCobro = (cuentaId: string): EstadoCobroLocal => {
+    return (
+      cobroPorCuentaId[cuentaId] || {
+        propinaMonto: 0,
+        tipoPropina: "ninguna",
+        montoPersoTexto: "",
+        metodoPago: "efectivo",
+      }
+    );
+  };
 
-            pendientes_entrega.append({
-                "id": f"{c.id}-{origen}",
-                "comanda_id": c.id,
-                "mesa": c.mesa,
-                "numero_ronda": c.numero_ronda,
-                "cuenta_id": c.cuenta_id,
-                "estacion": origen,
-                "listo_en": listo_en,
-                "items": [it.model_dump() for it in listos_sin_entregar],
-            })
+  const actualizarEstadoCobro = (cuentaId: string, parcial: Partial<EstadoCobroLocal>) => {
+    setCobroPorCuentaId((prev) => {
+      const actual = prev[cuentaId] || {
+        propinaMonto: 0,
+        tipoPropina: "ninguna",
+        montoPersoTexto: "",
+        metodoPago: "efectivo",
+      };
+      return {
+        ...prev,
+        [cuentaId]: { ...actual, ...parcial },
+      };
+    });
+  };
 
-        return {
-            "entregas_pendientes": pendientes_entrega,
-            "llamados_activos": [ll.model_dump() for ll in _llamados_mesero if not ll.atendido],
-            "llamados_atendidos": [ll.model_dump() for ll in _llamados_mesero if ll.atendido],
-            "ordenes_anteriores": _consolidar_historial_por_cuenta_y_ronda(_entregas_historial),
+  const handleSeleccionarPropinaPorcentaje = (cuenta: CuentaPorCobrar, porcentaje: 10 | 20) => {
+    const actual = getEstadoCobro(cuenta.id);
+    const clave = String(porcentaje) as "10" | "20";
+    if (actual.tipoPropina === clave) {
+      actualizarEstadoCobro(cuenta.id, {
+        propinaMonto: 0,
+        tipoPropina: "ninguna",
+        montoPersoTexto: "",
+      });
+      return;
+    }
+    const calculada = Math.round(cuenta.subtotal * (porcentaje / 100) * 100) / 100;
+    actualizarEstadoCobro(cuenta.id, {
+      propinaMonto: calculada,
+      tipoPropina: clave,
+      montoPersoTexto: "",
+    });
+  };
+
+  const handleCambioMontoPerso = (cuentaId: string, texto: string) => {
+    const limpio = texto.replace(/[^0-9.]/g, "");
+    const numerico = parseFloat(limpio);
+    actualizarEstadoCobro(cuentaId, {
+      montoPersoTexto: limpio,
+      tipoPropina: limpio === "" ? "ninguna" : "perso",
+      propinaMonto: !Number.isNaN(numerico) && numerico >= 0 ? Math.round(numerico * 100) / 100 : 0,
+    });
+  };
+
+  const handleCuentaPagada = async (cuenta: CuentaPorCobrar) => {
+    const estado = getEstadoCobro(cuenta.id);
+    setPagandoId(cuenta.id);
+    try {
+      const res = await fetch(
+        `${API_BASE}/api/v1/cocina/cuentas-por-cobrar/${encodeURIComponent(cuenta.id)}/pagar`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            metodo_pago: estado.metodoPago,
+            propina: estado.propinaMonto,
+          }),
         }
+      );
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      setCuentasPorCobrar((prev) => prev.filter((c) => c.id !== cuenta.id));
+      setCobroPorCuentaId((prev) => {
+        const copia = { ...prev };
+        delete copia[cuenta.id];
+        return copia;
+      });
+      await cargarTodo();
+    } catch {
+      setError("Error al registrar el pago de la cuenta.");
+    } finally {
+      setPagandoId(null);
+    }
+  };
 
+  const handleMarcarListo = async (comandaId: string) => {
+    try {
+      const res = await fetch(`${API_BASE}/api/v1/cocina/comandas/${comandaId}/completar`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ estacion: filtroEstacion }),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const actualizada: Comanda = await res.json();
+      setComandas((prev) => prev.map((c) => (c.id === comandaId ? actualizada : c)));
+      await cargarTodo();
+    } catch {
+      setError("Error al marcar la orden como lista.");
+    }
+  };
 
-@router.post("/llamar-mesero", response_model=LlamadoMeseroOut, status_code=201)
-def llamar_mesero(payload: LlamarMeseroIn) -> LlamadoMeseroOut:
-    """Registra una alerta automática cuando el cliente presiona Llamar al mesero."""
-    mesa_key = payload.mesa.strip()
-    if not mesa_key:
-        raise HTTPException(status_code=400, detail="Mesa inválida.")
+  const handleRestaurar = async (comandaId: string) => {
+    try {
+      const res = await fetch(`${API_BASE}/api/v1/cocina/comandas/${comandaId}/restaurar`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ estacion: filtroEstacion }),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const actualizada: Comanda = await res.json();
+      setComandas((prev) => prev.map((c) => (c.id === comandaId ? actualizada : c)));
+      await cargarTodo();
+    } catch {
+      setError("Error al restaurar la orden.");
+    }
+  };
 
-    ahora = datetime.now(timezone.utc)
-    with _lock:
-        existente = next(
-            (ll for ll in _llamados_mesero if ll.mesa == mesa_key and not ll.atendido),
-            None,
-        )
-        if existente:
-            existente.creado_en = ahora
-            existente.motivo = payload.motivo.strip() or "Atención en mesa"
-            return existente
+  const handleMarcarEntregadoMesa = async (entrega: EntregaPendienteMesa) => {
+    try {
+      const res = await fetch(`${API_BASE}/api/v1/cocina/estatus-mesas/entregar`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          comanda_id: entrega.comanda_id,
+          estacion: entrega.estacion,
+        }),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      await cargarTodo();
+    } catch {
+      setError("Error al marcar la entrega de la mesa como completada.");
+    }
+  };
 
-        llamado = LlamadoMeseroOut(
-            id=str(uuid.uuid4())[:8],
-            mesa=mesa_key,
-            motivo=payload.motivo.strip() or "Atención en mesa",
-            creado_en=ahora,
-            atendido=False,
-        )
-        _llamados_mesero.insert(0, llamado)
-        if len(_llamados_mesero) > 100:
-            del _llamados_mesero[100:]
-        return llamado
-
-
-@router.get("/llamados-mesero", response_model=list[LlamadoMeseroOut])
-def listar_llamados_mesero(incluir_atendidos: bool = True) -> list[LlamadoMeseroOut]:
-    """Devuelve los llamados al mesero."""
-    with _lock:
-        if incluir_atendidos:
-            return list(_llamados_mesero)
-        return [ll for ll in _llamados_mesero if not ll.atendido]
-
-
-@router.patch("/llamados-mesero/{llamado_id}/atender", response_model=LlamadoMeseroOut)
-def atender_llamado_mesero(llamado_id: str) -> LlamadoMeseroOut:
-    """Marca un llamado al mesero como atendido."""
-    ahora = datetime.now(timezone.utc)
-    with _lock:
-        llamado = next((ll for ll in _llamados_mesero if ll.id == llamado_id), None)
-        if not llamado:
-            raise HTTPException(status_code=404, detail="Llamado de mesero no encontrado.")
-        llamado.atendido = True
-        llamado.atendido_en = ahora
-        return llamado
-
-
-@router.get("/cuentas/{mesa}")
-def obtener_cuenta_mesa(mesa: str) -> dict:
-    """Devuelve las rondas confirmadas vigentes de la mesa y el siguiente número de ronda."""
-    mesa_key = str(mesa).strip()
-    if not mesa_key:
-        raise HTTPException(status_code=400, detail="Mesa inválida.")
-
-    with _lock:
-        _obtener_cuenta_id_actual(mesa_key)
-        rondas = list(_cuentas_por_mesa.get(mesa_key, []))
-        return {
-            "mesa": mesa_key,
-            "rondas": rondas,
-            "siguiente_numero_ronda": len(rondas) + 1,
+  const handleAtenderLlamado = async (llamadoId: string) => {
+    try {
+      const res = await fetch(
+        `${API_BASE}/api/v1/cocina/llamados-mesero/${encodeURIComponent(llamadoId)}/atender`,
+        {
+          method: "PATCH",
         }
+      );
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      await cargarTodo();
+    } catch {
+      setError("Error al marcar el llamado del mesero como atendido.");
+    }
+  };
 
+  return (
+    <div className="min-h-screen bg-zinc-950 text-zinc-100 p-4 md:p-6 select-none">
+      <header className="flex flex-wrap items-center justify-between gap-4 pb-5 border-b border-zinc-800">
+        <div>
+          <h1 className="text-2xl md:text-3xl font-bold tracking-tight">
+            Visiak KDS · Cocina &amp; Barra
+          </h1>
+          <p className="text-sm text-zinc-400">
+            {vista === "estatus_mesas"
+              ? "Estatus mesas · 0–3m Verde · 3–8m Amarillo · 8m+ Rojo"
+              : vista === "cuentas"
+              ? "Cuentas por cobrar · Propinas y cierre de pago"
+              : "0–10m Verde · 10–25m Amarillo · 25m+ Rojo"}
+          </p>
+        </div>
 
-@router.post("/cuentas/{mesa}/rondas", status_code=201)
-def agregar_ronda_cuenta(mesa: str, payload: CrearRondaCuentaRequest) -> dict:
-    """Registra una ronda confirmada en la cuenta abierta de la mesa."""
-    mesa_key = str(mesa).strip()
-    if not mesa_key:
-        raise HTTPException(status_code=400, detail="Mesa inválida.")
+        <div className="flex flex-wrap items-center gap-2">
+          {(
+            [
+              { key: "todos", label: "Alimentos y bebidas" },
+              { key: "alimento", label: "Solo alimentos" },
+              { key: "bebida", label: "Solo bebidas" },
+              {
+                key: "estatus_mesas",
+                label: `Estatus mesas${totalAlertasEstatusMesas > 0 ? ` (${totalAlertasEstatusMesas})` : ""}`,
+              },
+              {
+                key: "cuentas",
+                label: `Cuentas${cuentasPorCobrar.length > 0 ? ` (${cuentasPorCobrar.length})` : ""}`,
+              },
+            ] as const
+          ).map((tab) => {
+            const activo = vista === tab.key;
+            return (
+              <button
+                key={tab.key}
+                type="button"
+                onClick={() => setVista(tab.key)}
+                className={`px-4 py-3 rounded-xl text-sm md:text-base font-semibold transition cursor-pointer ${
+                  activo
+                    ? "bg-amber-400 text-zinc-950 shadow-lg"
+                    : "bg-zinc-900 text-zinc-300 hover:bg-zinc-800 border border-zinc-700"
+                }`}
+              >
+                {tab.label}
+              </button>
+            );
+          })}
 
-    with _lock:
-        _obtener_cuenta_id_actual(mesa_key)
-        rondas_actuales = _cuentas_por_mesa.setdefault(mesa_key, [])
-        numero_ronda = len(rondas_actuales) + 1
-        nueva_ronda = {
-            "numeroRonda": numero_ronda,
-            "items": [item.model_dump() for item in payload.items],
-            "subtotalRonda": round(float(payload.subtotal_ronda), 2),
-            "confirmadaEn": datetime.now(timezone.utc).isoformat(),
-        }
-        rondas_actuales.append(nueva_ronda)
-        return {
-            "mesa": mesa_key,
-            "ronda": nueva_ronda,
-            "rondas": list(rondas_actuales),
-        }
+          {vista === "estatus_mesas" && (
+            <button
+              type="button"
+              onClick={() => setMostrarAnterioresMesas((v) => !v)}
+              className="px-4 py-3 rounded-xl text-sm md:text-base font-semibold bg-zinc-800 hover:bg-zinc-700 text-zinc-100 border border-zinc-600 cursor-pointer"
+            >
+              Órdenes anteriores ({totalHistorialEstatusMesas})
+            </button>
+          )}
 
+          {vista !== "estatus_mesas" && vista !== "cuentas" && (
+            <button
+              type="button"
+              onClick={() => setMostrarAnteriores((v) => !v)}
+              className="px-4 py-3 rounded-xl text-sm md:text-base font-semibold bg-zinc-800 hover:bg-zinc-700 text-zinc-100 border border-zinc-600 cursor-pointer"
+            >
+              Órdenes anteriores ({ordenesAnterioresCocina.length})
+            </button>
+          )}
 
-@router.delete("/cuentas/{mesa}")
-def cerrar_cuenta_mesa(mesa: str) -> dict:
-    """Envía el resumen de la cuenta a Cuentas por Cobrar, limpia la mesa e inicia nuevo ciclo."""
-    mesa_key = str(mesa).strip()
-    if not mesa_key:
-        raise HTTPException(status_code=400, detail="Mesa inválida.")
+          <button
+            type="button"
+            onClick={cargarTodo}
+            className="px-3 py-3 rounded-xl text-sm font-semibold bg-zinc-900 hover:bg-zinc-800 text-zinc-300 border border-zinc-700 cursor-pointer"
+          >
+            Actualizar
+          </button>
+        </div>
+      </header>
 
-    ahora = datetime.now(timezone.utc)
-    with _lock:
-        rondas_cerradas = _cuentas_por_mesa.pop(mesa_key, [])
-        cuenta_id_cerrada = _obtener_cuenta_id_actual(mesa_key)
+      {error && (
+        <div className="mt-4 p-3 rounded-xl bg-rose-950/80 border border-rose-500 text-rose-200 text-sm">
+          {error}
+        </div>
+      )}
 
-        if rondas_cerradas:
-            subtotal = round(sum(float(r.get("subtotalRonda", 0)) for r in rondas_cerradas), 2)
-            cuenta_cobro = CuentaPorCobrarOut(
-                id=str(uuid.uuid4())[:8],
-                mesa=mesa_key,
-                cuenta_id=cuenta_id_cerrada,
-                rondas=list(rondas_cerradas),
-                subtotal=subtotal,
-                solicitada_en=ahora,
-            )
-            _cuentas_por_cobrar.insert(0, cuenta_cobro)
+      {vista === "cuentas" ? (
+        <main className="mt-6 space-y-4">
+          <div className="flex items-center justify-between">
+            <h2 className="text-lg font-bold text-amber-400">
+              Cuentas finalizadas pendientes de cobro ({cuentasPorCobrar.length})
+            </h2>
+          </div>
 
-        _cuenta_activa_id_por_mesa[mesa_key] = str(uuid.uuid4())[:8]
-        return {"mesa": mesa_key, "cerrada": True}
+          {cargando ? (
+            <div className="text-zinc-400 text-base py-12 text-center">Cargando cuentas...</div>
+          ) : cuentasPorCobrar.length === 0 ? (
+            <div className="rounded-2xl border border-dashed border-zinc-800 p-12 text-center text-zinc-400">
+              No hay cuentas pendientes de cobro en este momento.
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-5">
+              {cuentasPorCobrar.map((cuenta) => {
+                const estado = getEstadoCobro(cuenta.id);
+                const totalFinal = Math.round((cuenta.subtotal + estado.propinaMonto) * 100) / 100;
+                const propina10 = Math.round(cuenta.subtotal * 0.1 * 100) / 100;
+                const propina20 = Math.round(cuenta.subtotal * 0.2 * 100) / 100;
 
+                return (
+                  <article
+                    key={cuenta.id}
+                    className="rounded-2xl bg-zinc-900 border-2 border-amber-400/50 p-5 flex flex-col justify-between shadow-lg space-y-4"
+                  >
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between pb-3 border-b border-zinc-800">
+                        <div>
+                          <span className="text-xl font-extrabold text-white">
+                            Mesa {cuenta.mesa}
+                          </span>
+                          <span className="ml-2 text-xs font-semibold uppercase px-2.5 py-0.5 rounded-full bg-amber-500/20 text-amber-300">
+                            Por cobrar
+                          </span>
+                        </div>
+                        <span className="text-xs text-zinc-400">
+                          {new Date(cuenta.solicitada_en).toLocaleTimeString("es-MX", {
+                            hour: "2-digit",
+                            minute: "2-digit",
+                          })}
+                        </span>
+                      </div>
 
-@router.get("/cuentas-por-cobrar", response_model=list[CuentaPorCobrarOut])
-def listar_cuentas_por_cobrar() -> list[CuentaPorCobrarOut]:
-    """Devuelve las cuentas finalizadas por el comensal pendientes de cobro."""
-    with _lock:
-        return list(_cuentas_por_cobrar)
+                      {/* Resumen de rondas y productos */}
+                      <div className="space-y-2.5 max-h-60 overflow-y-auto pr-1">
+                        {cuenta.rondas.map((ronda) => (
+                          <div
+                            key={ronda.numeroRonda}
+                            className="p-3 rounded-xl bg-zinc-950/90 border border-zinc-800 space-y-1.5"
+                          >
+                            <div className="flex items-center justify-between text-xs font-bold text-amber-300">
+                              <span>Ronda #{ronda.numeroRonda}</span>
+                              <span>{formatoMoneda(ronda.subtotalRonda)}</span>
+                            </div>
+                            <ul className="space-y-1">
+                              {ronda.items.map((it, idx) => (
+                                <li
+                                  key={`${it.producto_id}-${idx}`}
+                                  className="flex items-center justify-between text-xs text-zinc-200"
+                                >
+                                  <span>
+                                    <strong className="text-zinc-400 mr-1">{it.cantidad}x</strong>
+                                    {it.nombre}
+                                  </span>
+                                  <span className="text-zinc-300">
+                                    {formatoMoneda(it.subtotal)}
+                                  </span>
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
+                        ))}
+                      </div>
 
+                      {/* Sección de Propina */}
+                      <div className="p-3.5 rounded-xl bg-zinc-950 border border-zinc-800 space-y-3">
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs font-bold uppercase tracking-wider text-zinc-400">
+                            Propina
+                          </span>
+                          <span className="text-sm font-bold text-emerald-400">
+                            +{formatoMoneda(estado.propinaMonto)}
+                          </span>
+                        </div>
 
-@router.post("/cuentas-por-cobrar/{cuenta_cobro_id}/pagar", response_model=CuentaPagadaOut)
-def registrar_pago_cuenta(cuenta_cobro_id: str, payload: PagarCuentaIn) -> CuentaPagadaOut:
-    """Marca la cuenta como pagada, la quita de pendientes y guarda venta + propina."""
-    ahora = datetime.now(timezone.utc)
-    with _lock:
-        idx = next((i for i, c in enumerate(_cuentas_por_cobrar) if c.id == cuenta_cobro_id), None)
-        if idx is None:
-            raise HTTPException(status_code=404, detail="Cuenta por cobrar no encontrada.")
+                        <div className="grid grid-cols-2 gap-2">
+                          <button
+                            type="button"
+                            onClick={() => handleSeleccionarPropinaPorcentaje(cuenta, 10)}
+                            className={`py-2.5 px-3 rounded-xl text-xs font-extrabold border transition cursor-pointer ${
+                              estado.tipoPropina === "10"
+                                ? "bg-amber-400 text-zinc-950 border-amber-300"
+                                : "bg-zinc-900 text-zinc-200 border-zinc-700 hover:bg-zinc-800"
+                            }`}
+                          >
+                            10% propina ({formatoMoneda(propina10)})
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleSeleccionarPropinaPorcentaje(cuenta, 20)}
+                            className={`py-2.5 px-3 rounded-xl text-xs font-extrabold border transition cursor-pointer ${
+                              estado.tipoPropina === "20"
+                                ? "bg-amber-400 text-zinc-950 border-amber-300"
+                                : "bg-zinc-900 text-zinc-200 border-zinc-700 hover:bg-zinc-800"
+                            }`}
+                          >
+                            20% propina ({formatoMoneda(propina20)})
+                          </button>
+                        </div>
 
-        cuenta = _cuentas_por_cobrar.pop(idx)
-        propina_val = round(float(payload.propina), 2)
-        total_final = round(cuenta.subtotal + propina_val, 2)
+                        <label className="flex items-center justify-between gap-2 text-xs font-semibold text-zinc-300">
+                          <span className="shrink-0">Monto perso:</span>
+                          <div className="relative flex-1">
+                            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400">
+                              $
+                            </span>
+                            <input
+                              type="text"
+                              inputMode="decimal"
+                              placeholder="0.00"
+                              value={estado.montoPersoTexto}
+                              onChange={(e) => handleCambioMontoPerso(cuenta.id, e.target.value)}
+                              className="w-full pl-7 pr-3 py-2 rounded-xl bg-zinc-900 border border-zinc-700 text-zinc-100 text-sm font-semibold focus:outline-none focus:border-amber-400"
+                            />
+                          </div>
+                        </label>
+                      </div>
 
-        pagada = CuentaPagadaOut(
-            id=cuenta.id,
-            mesa=cuenta.mesa,
-            cuenta_id=cuenta.cuenta_id,
-            rondas=cuenta.rondas,
-            subtotal=cuenta.subtotal,
-            propina=propina_val,
-            total_final=total_final,
-            metodo_pago=payload.metodo_pago,
-            solicitada_en=cuenta.solicitada_en,
-            pagada_en=ahora,
-        )
-        _cuentas_pagadas.insert(0, pagada)
-        return pagada
+                      {/* Totales */}
+                      <div className="p-3.5 rounded-xl bg-zinc-950 border border-zinc-800 space-y-1.5 text-sm">
+                        <div className="flex justify-between text-zinc-400">
+                          <span>Subtotal consumo:</span>
+                          <span>{formatoMoneda(cuenta.subtotal)}</span>
+                        </div>
+                        <div className="flex justify-between text-zinc-400">
+                          <span>Propina:</span>
+                          <span>{formatoMoneda(estado.propinaMonto)}</span>
+                        </div>
+                        <div className="flex justify-between text-base font-extrabold text-white pt-1.5 border-t border-zinc-800">
+                          <span>Total final:</span>
+                          <span className="text-emerald-400">{formatoMoneda(totalFinal)}</span>
+                        </div>
+                      </div>
 
+                      {/* Método de pago */}
+                      <div className="space-y-1.5">
+                        <span className="text-xs font-bold uppercase tracking-wider text-zinc-400">
+                          Método de pago
+                        </span>
+                        <div className="grid grid-cols-2 gap-2">
+                          <button
+                            type="button"
+                            onClick={() =>
+                              actualizarEstadoCobro(cuenta.id, { metodoPago: "efectivo" })
+                            }
+                            className={`py-2.5 rounded-xl text-xs font-extrabold border transition cursor-pointer ${
+                              estado.metodoPago === "efectivo"
+                                ? "bg-emerald-500/20 text-emerald-300 border-emerald-400"
+                                : "bg-zinc-950 text-zinc-400 border-zinc-800 hover:text-zinc-200"
+                            }`}
+                          >
+                            Efectivo
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              actualizarEstadoCobro(cuenta.id, { metodoPago: "tarjeta" })
+                            }
+                            className={`py-2.5 rounded-xl text-xs font-extrabold border transition cursor-pointer ${
+                              estado.metodoPago === "tarjeta"
+                                ? "bg-sky-500/20 text-sky-300 border-sky-400"
+                                : "bg-zinc-950 text-zinc-400 border-zinc-800 hover:text-zinc-200"
+                            }`}
+                          >
+                            Tarjeta (Terminal)
+                          </button>
+                        </div>
+                      </div>
+                    </div>
 
-@router.get("/cuentas-pagadas", response_model=list[CuentaPagadaOut])
-def listar_cuentas_pagadas() -> list[CuentaPagadaOut]:
-    """Devuelve el historial de cuentas pagadas (base para el resumen del día)."""
-    with _lock:
-        return list(_cuentas_pagadas)
+                    <button
+                      type="button"
+                      disabled={pagandoId === cuenta.id}
+                      onClick={() => handleCuentaPagada(cuenta)}
+                      className="w-full py-3.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 disabled:opacity-50 active:scale-[0.99] text-zinc-950 font-extrabold text-base tracking-wide transition cursor-pointer"
+                    >
+                      {pagandoId === cuenta.id ? "REGISTRANDO..." : "CUENTA PAGADA"}
+                    </button>
+                  </article>
+                );
+              })}
+            </div>
+          )}
+        </main>
+      ) : vista === "estatus_mesas" ? (
+        <main className="mt-6 space-y-6">
+          {mostrarAnterioresMesas && (
+            <section className="p-4 rounded-2xl bg-zinc-900 border border-zinc-700">
+              <div className="flex items-center justify-between mb-3">
+                <h2 className="text-lg font-bold">Órdenes anteriores · Entregas y llamados</h2>
+                <button
+                  type="button"
+                  onClick={() => setMostrarAnterioresMesas(false)}
+                  className="text-sm text-zinc-400 hover:text-white cursor-pointer"
+                >
+                  Cerrar
+                </button>
+              </div>
+
+              {totalHistorialEstatusMesas === 0 ? (
+                <p className="text-sm text-zinc-400">
+                  Aún no hay entregas ni llamados atendidos en el historial.
+                </p>
+              ) : (
+                <div className="space-y-4">
+                  {cuentasAgrupadasMesas.length > 0 && (
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                      {cuentasAgrupadasMesas.map((cuenta) => (
+                        <div
+                          key={cuenta.claveCuenta}
+                          className="p-4 rounded-2xl bg-zinc-950/90 border-2 border-zinc-700/80 space-y-3"
+                        >
+                          <div className="flex items-center justify-between pb-2 border-b border-zinc-800">
+                            <span className="font-extrabold text-base text-amber-300">
+                              Mesa {cuenta.mesa} · Cuenta #{cuenta.numeroCuenta}
+                            </span>
+                            <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-zinc-800 text-zinc-300">
+                              {cuenta.rondas.length}{" "}
+                              {cuenta.rondas.length === 1 ? "ronda" : "rondas"}
+                            </span>
+                          </div>
+
+                          <div className="space-y-2.5">
+                            {cuenta.rondas.map((reg) => (
+                              <div
+                                key={reg.id}
+                                className="p-3 rounded-xl bg-zinc-900 border border-zinc-800 space-y-1.5"
+                              >
+                                <div className="flex items-center justify-between">
+                                  <span className="font-bold text-sm text-white">
+                                    Ronda #{reg.numero_ronda}
+                                  </span>
+                                  <span className="text-[11px] font-semibold px-2 py-0.5 rounded bg-emerald-950/80 text-emerald-300 border border-emerald-500/30">
+                                    Entregado
+                                  </span>
+                                </div>
+                                <p className="text-xs text-zinc-300">
+                                  {reg.items.map((it) => `${it.cantidad}x ${it.nombre}`).join(", ")}
+                                </p>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {estatusMesas.llamados_atendidos.length > 0 && (
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                      {estatusMesas.llamados_atendidos.map((ll) => (
+                        <div
+                          key={ll.id}
+                          className="p-3 rounded-xl bg-zinc-950 border border-zinc-800 space-y-1"
+                        >
+                          <div className="flex items-center justify-between">
+                            <span className="font-bold text-base text-white">
+                              Mesa {ll.mesa} · Llamado mesero
+                            </span>
+                            <span className="text-[11px] font-semibold px-2 py-0.5 rounded bg-emerald-950/80 text-emerald-300 border border-emerald-500/30">
+                              Atendido
+                            </span>
+                          </div>
+                          <p className="text-xs text-zinc-400">{ll.motivo}</p>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+            </section>
+          )}
+
+          <section>
+            <h2 className="text-lg font-bold text-amber-400 mb-3">
+              Alertas de llamado al mesero ({estatusMesas.llamados_activos.length})
+            </h2>
+            {estatusMesas.llamados_activos.length === 0 ? (
+              <div className="rounded-2xl border border-dashed border-zinc-800 p-6 text-center text-sm text-zinc-400">
+                No hay llamados activos de mesero en este momento.
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+                {estatusMesas.llamados_activos.map((llamado) => {
+                  const tiempo = obtenerEstadoTiempo(llamado.creado_en, ahoraMs, {
+                    verdeMaxMin: 3,
+                    amarilloMaxMin: 8,
+                  });
+                  return (
+                    <article
+                      key={llamado.id}
+                      className={`rounded-2xl bg-zinc-900 border-2 ${tiempo.bordeTarjeta} overflow-hidden flex flex-col justify-between shadow-lg`}
+                    >
+                      <div>
+                        <div className="w-full h-3 bg-zinc-800">
+                          <div
+                            className={`h-full ${tiempo.bgBarra} transition-all duration-500`}
+                            style={{ width: `${tiempo.porcentaje}%` }}
+                          />
+                        </div>
+                        <div className="p-4">
+                          <div className="flex items-center justify-between gap-2 pb-2 border-b border-zinc-800">
+                            <div>
+                              <span className="text-xl font-extrabold text-white">
+                                Mesa {llamado.mesa}
+                              </span>
+                              <span className="ml-2 text-xs font-semibold uppercase px-2 py-0.5 rounded bg-amber-500/20 text-amber-300">
+                                Llamar al mesero
+                              </span>
+                            </div>
+                            <span
+                              className={`px-3 py-1 rounded-full text-sm font-bold ${tiempo.badgeTexto}`}
+                            >
+                              {tiempo.label}
+                            </span>
+                          </div>
+                          <p className="mt-3 text-sm text-zinc-200">{llamado.motivo}</p>
+                        </div>
+                      </div>
+                      <div className="p-4 pt-0">
+                        <button
+                          type="button"
+                          onClick={() => handleAtenderLlamado(llamado.id)}
+                          className="w-full py-3 rounded-xl bg-amber-400 hover:bg-amber-300 text-zinc-950 font-extrabold text-sm tracking-wide transition cursor-pointer"
+                        >
+                          MARCAR ATENDIDO
+                        </button>
+                      </div>
+                    </article>
+                  );
+                })}
+              </div>
+            )}
+          </section>
+
+          <section>
+            <h2 className="text-lg font-bold text-emerald-400 mb-3">
+              Platillos y bebidas listos para entregar ({estatusMesas.entregas_pendientes.length})
+            </h2>
+            {cargando ? (
+              <div className="text-zinc-400 text-base py-8 text-center">
+                Cargando estatus de mesas...
+              </div>
+            ) : estatusMesas.entregas_pendientes.length === 0 ? (
+              <div className="rounded-2xl border border-dashed border-zinc-800 p-8 text-center text-sm text-zinc-400">
+                No hay platillos ni bebidas listos pendientes de entregar a las mesas.
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+                {estatusMesas.entregas_pendientes.map((entrega) => {
+                  const tiempo = obtenerEstadoTiempo(entrega.listo_en, ahoraMs, {
+                    verdeMaxMin: 3,
+                    amarilloMaxMin: 8,
+                  });
+                  const etiquetaEstacion =
+                    entrega.estacion === "alimento"
+                      ? "Alimentos"
+                      : entrega.estacion === "bebida"
+                      ? "Bebidas"
+                      : "Alimentos y bebidas";
+
+                  return (
+                    <article
+                      key={entrega.id}
+                      className={`rounded-2xl bg-zinc-900 border-2 ${tiempo.bordeTarjeta} overflow-hidden flex flex-col justify-between shadow-lg`}
+                    >
+                      <div>
+                        <div className="w-full h-3 bg-zinc-800">
+                          <div
+                            className={`h-full ${tiempo.bgBarra} transition-all duration-500`}
+                            style={{ width: `${tiempo.porcentaje}%` }}
+                          />
+                        </div>
+
+                        <div className="p-4">
+                          <div className="flex items-center justify-between gap-2 pb-3 border-b border-zinc-800">
+                            <div>
+                              <span className="text-xl font-extrabold text-white">
+                                Mesa {entrega.mesa}
+                              </span>
+                              <span className="ml-2 text-sm font-medium text-zinc-400">
+                                Ronda #{entrega.numero_ronda}
+                              </span>
+                            </div>
+                            <span
+                              className={`px-3 py-1 rounded-full text-sm font-bold ${tiempo.badgeTexto}`}
+                            >
+                              {tiempo.label}
+                            </span>
+                          </div>
+
+                          <div className="mt-2">
+                            <span className="text-[11px] uppercase tracking-wider px-2 py-0.5 rounded bg-zinc-800 text-zinc-300">
+                              {etiquetaEstacion}
+                            </span>
+                          </div>
+
+                          <ul className="mt-3 space-y-2">
+                            {entrega.items.map((item) => (
+                              <li
+                                key={item.id}
+                                className="p-2.5 rounded-xl bg-zinc-950/90 border border-zinc-800"
+                              >
+                                <div className="flex items-start justify-between gap-2">
+                                  <span className="text-base font-semibold text-zinc-100">
+                                    <strong className="text-emerald-400 mr-1.5">
+                                      {item.cantidad}x
+                                    </strong>
+                                    {item.nombre}
+                                  </span>
+                                  <span className="text-[11px] uppercase tracking-wider px-2 py-0.5 rounded bg-zinc-800 text-zinc-300">
+                                    {item.tipo}
+                                  </span>
+                                </div>
+                                {item.notas && (
+                                  <p className="mt-1.5 text-sm font-medium text-amber-300 bg-amber-950/50 border border-amber-500/30 rounded-lg px-2.5 py-1">
+                                    Nota: {item.notas}
+                                  </p>
+                                )}
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      </div>
+
+                      <div className="p-4 pt-0">
+                        <button
+                          type="button"
+                          onClick={() => handleMarcarEntregadoMesa(entrega)}
+                          className="w-full py-3.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 active:scale-[0.99] text-zinc-950 font-extrabold text-base tracking-wide transition cursor-pointer"
+                        >
+                          ENTREGADO A MESA
+                        </button>
+                      </div>
+                    </article>
+                  );
+                })}
+              </div>
+            )}
+          </section>
+        </main>
+      ) : (
+        <>
+          {mostrarAnteriores && (
+            <section className="mt-6 p-4 rounded-2xl bg-zinc-900 border border-zinc-700">
+              <div className="flex items-center justify-between mb-3">
+                <h2 className="text-lg font-bold">Órdenes anteriores (recuperación rápida)</h2>
+                <button
+                  type="button"
+                  onClick={() => setMostrarAnteriores(false)}
+                  className="text-sm text-zinc-400 hover:text-white cursor-pointer"
+                >
+                  Cerrar
+                </button>
+              </div>
+
+              {ordenesAnterioresCocina.length === 0 ? (
+                <p className="text-sm text-zinc-400">No hay órdenes completadas en esta vista.</p>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                  {ordenesAnterioresCocina.map((c) => (
+                    <div
+                      key={c.id}
+                      className="p-3 rounded-xl bg-zinc-950 border border-zinc-800 flex items-center justify-between gap-3"
+                    >
+                      <div>
+                        <div className="font-bold text-base">
+                          Mesa {c.mesa} · Ronda #{c.numero_ronda}
+                        </div>
+                        <div className="text-xs text-zinc-400 mt-0.5">
+                          {c.items
+                            .filter((it) => it.listo && itemCoincideEstacion(it))
+                            .map((it) => `${it.cantidad}x ${it.nombre}`)
+                            .join(", ")}
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => handleRestaurar(c.id)}
+                        className="px-3 py-2 rounded-lg bg-amber-400/20 hover:bg-amber-400/30 text-amber-300 border border-amber-400/50 text-xs font-semibold shrink-0 cursor-pointer"
+                      >
+                        Restaurar
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </section>
+          )}
+
+          <main className="mt-6">
+            {cargando ? (
+              <div className="text-zinc-400 text-base py-12 text-center">Cargando comandas...</div>
+            ) : comandasActivas.length === 0 ? (
+              <div className="rounded-2xl border border-dashed border-zinc-800 p-12 text-center text-zinc-400">
+                No hay órdenes pendientes en{" "}
+                <span className="text-zinc-200 font-semibold">
+                  {filtroEstacion === "todos"
+                    ? "Alimentos y bebidas"
+                    : filtroEstacion === "alimento"
+                    ? "Solo alimentos"
+                    : "Solo bebidas"}
+                </span>
+                .
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+                {comandasActivas.map((comanda) => {
+                  const tiempo = obtenerEstadoTiempo(comanda.creada_en, ahoraMs, {
+                    verdeMaxMin: 10,
+                    amarilloMaxMin: 25,
+                  });
+                  return (
+                    <article
+                      key={comanda.id}
+                      className={`rounded-2xl bg-zinc-900 border-2 ${tiempo.bordeTarjeta} overflow-hidden flex flex-col justify-between shadow-lg`}
+                    >
+                      <div>
+                        <div className="w-full h-3 bg-zinc-800">
+                          <div
+                            className={`h-full ${tiempo.bgBarra} transition-all duration-500`}
+                            style={{ width: `${tiempo.porcentaje}%` }}
+                          />
+                        </div>
+
+                        <div className="p-4">
+                          <div className="flex items-center justify-between gap-2 pb-3 border-b border-zinc-800">
+                            <div>
+                              <span className="text-xl font-extrabold text-white">
+                                Mesa {comanda.mesa}
+                              </span>
+                              <span className="ml-2 text-sm font-medium text-zinc-400">
+                                Ronda #{comanda.numero_ronda}
+                              </span>
+                            </div>
+                            <span
+                              className={`px-3 py-1 rounded-full text-sm font-bold ${tiempo.badgeTexto}`}
+                            >
+                              {tiempo.label}
+                            </span>
+                          </div>
+
+                          <ul className="mt-3 space-y-2.5">
+                            {comanda.itemsVisiblesPendientes.map((item) => (
+                              <li
+                                key={item.id}
+                                className="p-2.5 rounded-xl bg-zinc-950/90 border border-zinc-800"
+                              >
+                                <div className="flex items-start justify-between gap-2">
+                                  <span className="text-base font-semibold text-zinc-100">
+                                    <strong className="text-amber-400 mr-1.5">
+                                      {item.cantidad}x
+                                    </strong>
+                                    {item.nombre}
+                                  </span>
+                                  <span className="text-[11px] uppercase tracking-wider px-2 py-0.5 rounded bg-zinc-800 text-zinc-300">
+                                    {item.tipo}
+                                  </span>
+                                </div>
+                                {item.notas && (
+                                  <p className="mt-1.5 text-sm font-medium text-amber-300 bg-amber-950/50 border border-amber-500/30 rounded-lg px-2.5 py-1">
+                                    Nota: {item.notas}
+                                  </p>
+                                )}
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      </div>
+
+                      <div className="p-4 pt-0">
+                        <button
+                          type="button"
+                          onClick={() => handleMarcarListo(comanda.id)}
+                          className="w-full py-3.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 active:scale-[0.99] text-zinc-950 font-extrabold text-base tracking-wide transition cursor-pointer"
+                        >
+                          LISTO
+                        </button>
+                      </div>
+                    </article>
+                  );
+                })}
+              </div>
+            )}
+          </main>
+        </>
+      )}
+    </div>
+  );
+}
