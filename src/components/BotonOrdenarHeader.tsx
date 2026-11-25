@@ -45,27 +45,18 @@ export function BotonOrdenarHeader({ productosDisponibles = [] }: BotonOrdenarHe
   const [mostrarResumen, setMostrarResumen] = useState(false);
   const [productoSeleccionado, setProductoSeleccionado] = useState<Producto | null>(null);
 
-  // Pantallita de confirmación al enviar ronda a cocina
   const [mostrarConfirmacionEnvio, setMostrarConfirmacionEnvio] = useState(false);
-
-  // Ventanita de confirmación al finalizar cuenta
   const [mostrarCuentaFinalizada, setMostrarCuentaFinalizada] = useState(false);
 
-  // Estado para el modal de personalización
   const [cantidad, setCantidad] = useState<number>(1);
   const [comentarios, setComentarios] = useState<string>('');
 
-  // Estado para el método de pago seleccionado (usado al finalizar cuenta)
-  const [metodoPago, setMetodoPago] = useState<string>('Efectivo');
+  const [metodoPago, setMetodoPago] = useState<'Efectivo' | 'Tarjeta (Terminal)'>('Efectivo');
 
-  // Estado para indicar si está enviando la ronda o cerrando cuenta
   const [enviandoCocina, setEnviandoCocina] = useState<boolean>(false);
   const [finalizandoCuenta, setFinalizandoCuenta] = useState<boolean>(false);
 
-  // Carrito de compras actual (siempre inicia vacío al abrir la web app)
   const [carrito, setCarrito] = useState<ItemCarrito[]>([]);
-
-  // Cuenta acumulada de la mesa (rondas ya confirmadas, sincronizada entre dispositivos)
   const [rondasConfirmadas, setRondasConfirmadas] = useState<RondaPedido[]>([]);
 
   const cargarCuentaMesa = useCallback(async () => {
@@ -173,7 +164,6 @@ export function BotonOrdenarHeader({ productosDisponibles = [] }: BotonOrdenarHe
     return true;
   };
 
-  // 1. CONFIRMAR PEDIDO (envía a cocina, registra en cuenta compartida de la mesa y muestra pantallita)
   const confirmarPedido = async () => {
     if (!validarMesaActiva()) return;
     if (carrito.length === 0 || enviandoCocina) return;
@@ -194,7 +184,7 @@ export function BotonOrdenarHeader({ productosDisponibles = [] }: BotonOrdenarHe
           }
         }
       } catch {
-        // Si falla la consulta previa, usamos el conteo actual como respaldo
+        // Respaldo con conteo local
       }
 
       const resCocina = await fetch(`${API_BASE}/api/v1/cocina/comandas`, {
@@ -266,7 +256,6 @@ export function BotonOrdenarHeader({ productosDisponibles = [] }: BotonOrdenarHe
     }
   };
 
-  // 2. FINALIZAR CUENTA (envía únicamente al sistema de Cuentas por Cobrar + muestra ventanita)
   const finalizarCuenta = async () => {
     if (!validarMesaActiva() || finalizandoCuenta) return;
 
@@ -312,10 +301,15 @@ export function BotonOrdenarHeader({ productosDisponibles = [] }: BotonOrdenarHe
         }
       }
 
+      const metodoApi = metodoPago === 'Efectivo' ? 'efectivo' : 'tarjeta';
       const resCierre = await fetch(
-        `${API_BASE}/api/v1/cocina/cuentas/${encodeURIComponent(String(mesa))}`,
+        `${API_BASE}/api/v1/cocina/cuentas/${encodeURIComponent(
+          String(mesa)
+        )}?metodo_pago=${encodeURIComponent(metodoApi)}`,
         {
           method: 'DELETE',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ metodo_pago: metodoApi }),
         }
       );
 
@@ -343,7 +337,6 @@ export function BotonOrdenarHeader({ productosDisponibles = [] }: BotonOrdenarHe
 
   return (
     <>
-      {/* BOTÓN EN LA CABECERA */}
       <div className="flex items-center gap-2">
         <button
           type="button"
@@ -358,7 +351,6 @@ export function BotonOrdenarHeader({ productosDisponibles = [] }: BotonOrdenarHe
         </button>
       </div>
 
-      {/* MODAL 1: CATÁLOGO DE PRODUCTOS DISPONIBLES */}
       {mostrarCatalogo && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex justify-center items-center p-4">
           <div className="bg-neutral-900 border border-neutral-800 w-full max-w-md rounded-2xl p-5 max-h-[85vh] flex flex-col relative shadow-2xl">
@@ -450,7 +442,6 @@ export function BotonOrdenarHeader({ productosDisponibles = [] }: BotonOrdenarHe
         </div>
       )}
 
-      {/* MODAL 2: DETALLE, CANTIDAD Y COMENTARIOS */}
       {productoSeleccionado && (
         <div className="fixed inset-0 bg-black/90 backdrop-blur-sm z-[60] flex justify-center items-center p-4">
           <div className="bg-neutral-900 border border-neutral-800 w-full max-w-md rounded-2xl p-5 relative shadow-2xl">
@@ -511,7 +502,6 @@ export function BotonOrdenarHeader({ productosDisponibles = [] }: BotonOrdenarHe
         </div>
       )}
 
-      {/* MODAL 3: RESUMEN COMPLETO Y FINALIZAR CUENTA */}
       {mostrarResumen && (
         <div className="fixed inset-0 bg-black/90 backdrop-blur-sm z-[70] flex justify-center items-center p-4">
           <div className="bg-neutral-900 border border-neutral-800 w-full max-w-md rounded-2xl p-5 max-h-[85vh] flex flex-col relative shadow-2xl">
@@ -585,7 +575,7 @@ export function BotonOrdenarHeader({ productosDisponibles = [] }: BotonOrdenarHe
                 💳 Método de pago para finalizar cuenta:
               </label>
               <div className="grid grid-cols-2 gap-2">
-                {['Efectivo', 'Tarjeta (Terminal)'].map((metodo) => (
+                {(['Efectivo', 'Tarjeta (Terminal)'] as const).map((metodo) => (
                   <button
                     key={metodo}
                     type="button"
@@ -636,7 +626,6 @@ export function BotonOrdenarHeader({ productosDisponibles = [] }: BotonOrdenarHe
         </div>
       )}
 
-      {/* MODAL 4: PANTALLITA DE CONFIRMACIÓN DE ENVÍO */}
       {mostrarConfirmacionEnvio && (
         <div className="fixed inset-0 bg-black/85 backdrop-blur-sm z-[80] flex justify-center items-center p-4">
           <div className="bg-neutral-900 border border-green-500/40 w-full max-w-sm rounded-2xl p-6 text-center shadow-2xl">
@@ -658,7 +647,6 @@ export function BotonOrdenarHeader({ productosDisponibles = [] }: BotonOrdenarHe
         </div>
       )}
 
-      {/* MODAL 5: CUENTA FINALIZADA CORRECTAMENTE */}
       {mostrarCuentaFinalizada && (
         <div className="fixed inset-0 bg-black/85 backdrop-blur-sm z-[85] flex justify-center items-center p-4">
           <div className="bg-neutral-900 border border-green-500/40 w-full max-w-sm rounded-2xl p-6 text-center shadow-2xl">
