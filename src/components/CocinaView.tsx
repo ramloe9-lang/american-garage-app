@@ -104,6 +104,24 @@ interface EstadoCobroLocal {
   metodoPago: MetodoPago;
 }
 
+export interface ProductoMasVendidoInfo {
+  nombre: string;
+  cantidad: number;
+}
+
+export interface ResumenDiaResponse {
+  cantidad_cuentas: number;
+  subtotal_ventas: number;
+  propinas_totales: number;
+  total_general: number;
+  total_efectivo: number;
+  total_tarjeta: number;
+  producto_mas_vendido: ProductoMasVendidoInfo | null;
+  alimento_mas_vendido: ProductoMasVendidoInfo | null;
+  bebida_mas_vendido: ProductoMasVendidoInfo | null;
+  combo_mas_vendido: ProductoMasVendidoInfo | null;
+}
+
 const API_BASE =
   (import.meta as unknown as { env?: Record<string, string> }).env?.VITE_API_URL ||
   "https://american-garage-app.onrender.com";
@@ -183,6 +201,16 @@ export default function CocinaView() {
   const [cuentasPorCobrar, setCuentasPorCobrar] = useState<CuentaPorCobrar[]>([]);
   const [cobroPorCuentaId, setCobroPorCuentaId] = useState<Record<string, EstadoCobroLocal>>({});
   const [pagandoId, setPagandoId] = useState<string | null>(null);
+
+  // Estados para "Terminar el día" y Resumen del día
+  const [confirmarTerminarDia, setConfirmarTerminarDia] = useState(false);
+  const [cargandoResumenDia, setCargandoResumenDia] = useState(false);
+  const [resumenDia, setResumenDia] = useState<ResumenDiaResponse | null>(null);
+  const [ventaEsperadaTexto, setVentaEsperadaTexto] = useState("");
+  const [resultadoVentaEsperada, setResultadoVentaEsperada] = useState<{
+    logrado: boolean;
+    diferencia: number;
+  } | null>(null);
 
   const [cargando, setCargando] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -418,6 +446,65 @@ export default function CocinaView() {
     }
   };
 
+  const abrirConfirmacionTerminarDia = () => {
+    setConfirmarTerminarDia(true);
+  };
+
+  const confirmarYMostrarResumenDia = async () => {
+    setConfirmarTerminarDia(false);
+    setCargandoResumenDia(true);
+    setResultadoVentaEsperada(null);
+    setVentaEsperadaTexto("");
+    try {
+      const res = await fetch(`${API_BASE}/api/v1/cocina/resumen-dia?t=${Date.now()}`, {
+        cache: "no-store",
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data: ResumenDiaResponse = await res.json();
+      setResumenDia(data);
+    } catch {
+      setError("No se pudo generar el resumen del día.");
+    } finally {
+      setCargandoResumenDia(false);
+    }
+  };
+
+  const calcularVentaEsperada = () => {
+    if (!resumenDia) return;
+    const esperado = parseFloat(ventaEsperadaTexto);
+    if (Number.isNaN(esperado) || esperado < 0) {
+      setResultadoVentaEsperada(null);
+      return;
+    }
+    const subtotalHoy = resumenDia.subtotal_ventas;
+    if (subtotalHoy >= esperado) {
+      setResultadoVentaEsperada({
+        logrado: true,
+        diferencia: Math.round((subtotalHoy - esperado) * 100) / 100,
+      });
+    } else {
+      setResultadoVentaEsperada({
+        logrado: false,
+        diferencia: Math.round((esperado - subtotalHoy) * 100) / 100,
+      });
+    }
+  };
+
+  const handleCerrarDiaDefinitivo = async () => {
+    try {
+      const res = await fetch(`${API_BASE}/api/v1/cocina/cerrar-dia`, {
+        method: "POST",
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      setResumenDia(null);
+      setVentaEsperadaTexto("");
+      setResultadoVentaEsperada(null);
+      await cargarTodo();
+    } catch {
+      setError("Error al cerrar el día.");
+    }
+  };
+
   const handleMarcarListo = async (comandaId: string) => {
     try {
       const res = await fetch(`${API_BASE}/api/v1/cocina/comandas/${comandaId}/completar`, {
@@ -558,12 +645,201 @@ export default function CocinaView() {
           >
             Actualizar
           </button>
+
+          <button
+            type="button"
+            onClick={abrirConfirmacionTerminarDia}
+            className="px-4 py-3 rounded-xl text-sm font-extrabold bg-rose-600 hover:bg-rose-500 text-white border border-rose-400/50 shadow-md transition cursor-pointer"
+          >
+            Terminar el día
+          </button>
         </div>
       </header>
 
       {error && (
         <div className="mt-4 p-3 rounded-xl bg-rose-950/80 border border-rose-500 text-rose-200 text-sm">
           {error}
+        </div>
+      )}
+
+      {/* MODAL CONFIRMACIÓN: ¿SEGURO QUE QUIERES TERMINAR EL DÍA? */}
+      {confirmarTerminarDia && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
+          <div className="w-full max-w-sm rounded-2xl bg-zinc-900 border border-rose-500/50 p-6 text-center shadow-2xl space-y-4">
+            <h2 className="text-lg font-extrabold text-white">
+              ¿Seguro que quieres terminar el día?
+            </h2>
+            <p className="text-xs text-zinc-400">
+              Se generará el resumen de ventas y propinas registradas hoy.
+            </p>
+            <div className="grid grid-cols-2 gap-3 pt-2">
+              <button
+                type="button"
+                onClick={() => setConfirmarTerminarDia(false)}
+                className="py-2.5 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-200 font-bold text-sm transition cursor-pointer"
+              >
+                No
+              </button>
+              <button
+                type="button"
+                onClick={confirmarYMostrarResumenDia}
+                className="py-2.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-extrabold text-sm transition cursor-pointer"
+              >
+                Sí
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL REPORTE: RESUMEN DEL DÍA */}
+      {(cargandoResumenDia || resumenDia) && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-sm p-4">
+          <div className="w-full max-w-lg rounded-2xl bg-zinc-900 border border-zinc-700 p-6 shadow-2xl space-y-4 max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between pb-3 border-b border-zinc-800">
+              <h2 className="text-xl font-extrabold text-amber-400">Resumen del día</h2>
+              <button
+                type="button"
+                onClick={() => {
+                  setResumenDia(null);
+                  setResultadoVentaEsperada(null);
+                  setVentaEsperadaTexto("");
+                }}
+                className="text-zinc-400 hover:text-white text-lg font-bold px-2 cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            {cargandoResumenDia || !resumenDia ? (
+              <p className="text-sm text-zinc-400 py-8 text-center">Calculando resumen...</p>
+            ) : (
+              <div className="space-y-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 text-xs">
+                  <div className="p-3 rounded-xl bg-zinc-950 border border-zinc-800">
+                    <span className="text-zinc-400 block">Producto más vendido en general</span>
+                    <strong className="text-sm text-white mt-0.5 block">
+                      {resumenDia.producto_mas_vendido
+                        ? `${resumenDia.producto_mas_vendido.nombre} (${resumenDia.producto_mas_vendido.cantidad})`
+                        : "Sin ventas registradas"}
+                    </strong>
+                  </div>
+
+                  <div className="p-3 rounded-xl bg-zinc-950 border border-zinc-800">
+                    <span className="text-zinc-400 block">Alimento más vendido</span>
+                    <strong className="text-sm text-white mt-0.5 block">
+                      {resumenDia.alimento_mas_vendido
+                        ? `${resumenDia.alimento_mas_vendido.nombre} (${resumenDia.alimento_mas_vendido.cantidad})`
+                        : "Sin alimentos vendidos"}
+                    </strong>
+                  </div>
+
+                  <div className="p-3 rounded-xl bg-zinc-950 border border-zinc-800">
+                    <span className="text-zinc-400 block">Bebida más vendida</span>
+                    <strong className="text-sm text-white mt-0.5 block">
+                      {resumenDia.bebida_mas_vendido
+                        ? `${resumenDia.bebida_mas_vendido.nombre} (${resumenDia.bebida_mas_vendido.cantidad})`
+                        : "Sin bebidas vendidas"}
+                    </strong>
+                  </div>
+
+                  <div className="p-3 rounded-xl bg-zinc-950 border border-zinc-800">
+                    <span className="text-zinc-400 block">Combo más vendido</span>
+                    <strong className="text-sm text-amber-300 mt-0.5 block">
+                      {resumenDia.combo_mas_vendido
+                        ? `${resumenDia.combo_mas_vendido.nombre} (${resumenDia.combo_mas_vendido.cantidad})`
+                        : "Sin combos vendidos"}
+                    </strong>
+                  </div>
+                </div>
+
+                <div className="p-4 rounded-xl bg-zinc-950 border border-zinc-800 space-y-2 text-sm">
+                  <div className="flex justify-between text-zinc-300">
+                    <span>Subtotal vendido hoy (productos):</span>
+                    <span className="font-bold text-white">
+                      {formatoMoneda(resumenDia.subtotal_ventas)}
+                    </span>
+                  </div>
+                  <div className="flex justify-between text-zinc-300">
+                    <span>Propinas recaudadas hoy:</span>
+                    <span className="font-bold text-emerald-400">
+                      {formatoMoneda(resumenDia.propinas_totales)}
+                    </span>
+                  </div>
+                  <div className="flex justify-between text-xs text-zinc-400 pt-1 border-t border-zinc-800/80">
+                    <span>Efectivo: {formatoMoneda(resumenDia.total_efectivo)}</span>
+                    <span>Tarjeta: {formatoMoneda(resumenDia.total_tarjeta)}</span>
+                  </div>
+                </div>
+
+                {/* Apartado Total de venta esperada */}
+                <div className="p-4 rounded-xl bg-zinc-950 border border-zinc-800 space-y-2.5">
+                  <label className="block text-xs font-bold uppercase tracking-wider text-zinc-300">
+                    Total de venta esperada:
+                  </label>
+                  <div className="relative">
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400 text-sm">
+                      $
+                    </span>
+                    <input
+                      type="text"
+                      inputMode="decimal"
+                      placeholder="Ej. 5000 y presiona Enter"
+                      value={ventaEsperadaTexto}
+                      onChange={(e) => {
+                        const limpio = e.target.value.replace(/[^0-9.]/g, "");
+                        setVentaEsperadaTexto(limpio);
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") {
+                          e.preventDefault();
+                          calcularVentaEsperada();
+                        }
+                      }}
+                      className="w-full pl-7 pr-3 py-2.5 rounded-xl bg-zinc-900 border border-zinc-700 text-white text-sm font-semibold focus:outline-none focus:border-amber-400"
+                    />
+                  </div>
+
+                  {resultadoVentaEsperada && (
+                    <p
+                      className={`text-sm font-extrabold pt-1 ${
+                        resultadoVentaEsperada.logrado ? "text-emerald-400" : "text-rose-400"
+                      }`}
+                    >
+                      {resultadoVentaEsperada.logrado
+                        ? `¡Se logró la venta esperada por ${formatoMoneda(
+                            resultadoVentaEsperada.diferencia
+                          )}!`
+                        : `Faltó ${formatoMoneda(
+                            resultadoVentaEsperada.diferencia
+                          )} para llegar a lo esperado.`}
+                    </p>
+                  )}
+                </div>
+
+                <div className="flex items-center justify-between gap-2 pt-1">
+                  <button
+                    type="button"
+                    onClick={handleCerrarDiaDefinitivo}
+                    className="px-4 py-2.5 rounded-xl bg-rose-600/20 hover:bg-rose-600/30 text-rose-300 border border-rose-500/40 text-xs font-bold transition cursor-pointer"
+                  >
+                    Reiniciar corte del día
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setResumenDia(null);
+                      setResultadoVentaEsperada(null);
+                      setVentaEsperadaTexto("");
+                    }}
+                    className="px-5 py-2.5 rounded-xl bg-amber-400 hover:bg-amber-300 text-zinc-950 text-xs font-extrabold transition cursor-pointer"
+                  >
+                    Listo
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
         </div>
       )}
 
@@ -612,7 +888,6 @@ export default function CocinaView() {
                         </span>
                       </div>
 
-                      {/* Resumen de rondas y productos */}
                       <div className="space-y-2.5 max-h-60 overflow-y-auto pr-1">
                         {cuenta.rondas.map((ronda) => (
                           <div
@@ -643,7 +918,6 @@ export default function CocinaView() {
                         ))}
                       </div>
 
-                      {/* Sección de Propina */}
                       <div className="p-3.5 rounded-xl bg-zinc-950 border border-zinc-800 space-y-3">
                         <div className="flex items-center justify-between">
                           <span className="text-xs font-bold uppercase tracking-wider text-zinc-400">
@@ -697,7 +971,6 @@ export default function CocinaView() {
                         </label>
                       </div>
 
-                      {/* Totales */}
                       <div className="p-3.5 rounded-xl bg-zinc-950 border border-zinc-800 space-y-1.5 text-sm">
                         <div className="flex justify-between text-zinc-400">
                           <span>Subtotal consumo:</span>
@@ -713,7 +986,6 @@ export default function CocinaView() {
                         </div>
                       </div>
 
-                      {/* Método de pago */}
                       <div className="space-y-1.5">
                         <span className="text-xs font-bold uppercase tracking-wider text-zinc-400">
                           Método de pago
