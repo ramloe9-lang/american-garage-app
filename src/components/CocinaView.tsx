@@ -94,6 +94,7 @@ export interface CuentaPorCobrar {
   cuenta_id: string;
   rondas: RondaCuentaCobro[];
   subtotal: number;
+  metodo_pago?: MetodoPago;
   solicitada_en: string;
 }
 
@@ -202,7 +203,6 @@ export default function CocinaView() {
   const [cobroPorCuentaId, setCobroPorCuentaId] = useState<Record<string, EstadoCobroLocal>>({});
   const [pagandoId, setPagandoId] = useState<string | null>(null);
 
-  // Estados para "Terminar el día" y Resumen del día
   const [confirmarTerminarDia, setConfirmarTerminarDia] = useState(false);
   const [cargandoResumenDia, setCargandoResumenDia] = useState(false);
   const [resumenDia, setResumenDia] = useState<ResumenDiaResponse | null>(null);
@@ -253,6 +253,20 @@ export default function CocinaView() {
       if (resCuentas.ok) {
         const dataCuentas: CuentaPorCobrar[] = await resCuentas.json();
         setCuentasPorCobrar(dataCuentas);
+        setCobroPorCuentaId((prev) => {
+          const siguiente = { ...prev };
+          for (const cta of dataCuentas) {
+            if (!siguiente[cta.id]) {
+              siguiente[cta.id] = {
+                propinaMonto: 0,
+                tipoPropina: "ninguna",
+                montoPersoTexto: "",
+                metodoPago: cta.metodo_pago === "tarjeta" ? "tarjeta" : "efectivo",
+              };
+            }
+          }
+          return siguiente;
+        });
       }
 
       setError(null);
@@ -361,13 +375,13 @@ export default function CocinaView() {
   const totalHistorialEstatusMesas =
     entregasConsolidadasMesas.length + estatusMesas.llamados_atendidos.length;
 
-  const getEstadoCobro = (cuentaId: string): EstadoCobroLocal => {
+  const getEstadoCobro = (cuenta: CuentaPorCobrar): EstadoCobroLocal => {
     return (
-      cobroPorCuentaId[cuentaId] || {
+      cobroPorCuentaId[cuenta.id] || {
         propinaMonto: 0,
         tipoPropina: "ninguna",
         montoPersoTexto: "",
-        metodoPago: "efectivo",
+        metodoPago: cuenta.metodo_pago === "tarjeta" ? "tarjeta" : "efectivo",
       }
     );
   };
@@ -387,8 +401,14 @@ export default function CocinaView() {
     });
   };
 
+  const handleAlternarMetodoPago = (cuenta: CuentaPorCobrar) => {
+    const actual = getEstadoCobro(cuenta).metodoPago;
+    const siguiente: MetodoPago = actual === "efectivo" ? "tarjeta" : "efectivo";
+    actualizarEstadoCobro(cuenta.id, { metodoPago: siguiente });
+  };
+
   const handleSeleccionarPropinaPorcentaje = (cuenta: CuentaPorCobrar, porcentaje: 10 | 20) => {
-    const actual = getEstadoCobro(cuenta.id);
+    const actual = getEstadoCobro(cuenta);
     const clave = String(porcentaje) as "10" | "20";
     if (actual.tipoPropina === clave) {
       actualizarEstadoCobro(cuenta.id, {
@@ -417,7 +437,7 @@ export default function CocinaView() {
   };
 
   const handleCuentaPagada = async (cuenta: CuentaPorCobrar) => {
-    const estado = getEstadoCobro(cuenta.id);
+    const estado = getEstadoCobro(cuenta);
     setPagandoId(cuenta.id);
     try {
       const res = await fetch(
@@ -496,12 +516,23 @@ export default function CocinaView() {
         method: "POST",
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      setComandas([]);
+      setEstatusMesas({
+        entregas_pendientes: [],
+        llamados_activos: [],
+        llamados_atendidos: [],
+        ordenes_anteriores: [],
+      });
+      setCuentasPorCobrar([]);
+      setCobroPorCuentaId({});
+      setMostrarAnteriores(false);
+      setMostrarAnterioresMesas(false);
       setResumenDia(null);
       setVentaEsperadaTexto("");
       setResultadoVentaEsperada(null);
       await cargarTodo();
     } catch {
-      setError("Error al cerrar el día.");
+      setError("Error al reiniciar el corte del día.");
     }
   };
 
@@ -662,7 +693,6 @@ export default function CocinaView() {
         </div>
       )}
 
-      {/* MODAL CONFIRMACIÓN: ¿SEGURO QUE QUIERES TERMINAR EL DÍA? */}
       {confirmarTerminarDia && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
           <div className="w-full max-w-sm rounded-2xl bg-zinc-900 border border-rose-500/50 p-6 text-center shadow-2xl space-y-4">
@@ -692,7 +722,6 @@ export default function CocinaView() {
         </div>
       )}
 
-      {/* MODAL REPORTE: RESUMEN DEL DÍA */}
       {(cargandoResumenDia || resumenDia) && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-sm p-4">
           <div className="w-full max-w-lg rounded-2xl bg-zinc-900 border border-zinc-700 p-6 shadow-2xl space-y-4 max-h-[90vh] overflow-y-auto">
@@ -735,7 +764,7 @@ export default function CocinaView() {
                   </div>
 
                   <div className="p-3 rounded-xl bg-zinc-950 border border-zinc-800">
-                    <span className="text-zinc-400 block">Bebida más vendida</span>
+                    <span className="text-zinc-400 block">Bebida más vendido</span>
                     <strong className="text-sm text-white mt-0.5 block">
                       {resumenDia.bebida_mas_vendido
                         ? `${resumenDia.bebida_mas_vendido.nombre} (${resumenDia.bebida_mas_vendido.cantidad})`
@@ -772,7 +801,6 @@ export default function CocinaView() {
                   </div>
                 </div>
 
-                {/* Apartado Total de venta esperada */}
                 <div className="p-4 rounded-xl bg-zinc-950 border border-zinc-800 space-y-2.5">
                   <label className="block text-xs font-bold uppercase tracking-wider text-zinc-300">
                     Total de venta esperada:
@@ -860,7 +888,7 @@ export default function CocinaView() {
           ) : (
             <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-5">
               {cuentasPorCobrar.map((cuenta) => {
-                const estado = getEstadoCobro(cuenta.id);
+                const estado = getEstadoCobro(cuenta);
                 const totalFinal = Math.round((cuenta.subtotal + estado.propinaMonto) * 100) / 100;
                 const propina10 = Math.round(cuenta.subtotal * 0.1 * 100) / 100;
                 const propina20 = Math.round(cuenta.subtotal * 0.2 * 100) / 100;
@@ -986,37 +1014,43 @@ export default function CocinaView() {
                         </div>
                       </div>
 
-                      <div className="space-y-1.5">
-                        <span className="text-xs font-bold uppercase tracking-wider text-zinc-400">
-                          Método de pago
-                        </span>
-                        <div className="grid grid-cols-2 gap-2">
+                      {/* Método de pago preseleccionado y bloqueado + botón rojo para cambiarlo */}
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="text-xs font-bold uppercase tracking-wider text-zinc-400">
+                            Método de pago
+                          </span>
                           <button
                             type="button"
-                            onClick={() =>
-                              actualizarEstadoCobro(cuenta.id, { metodoPago: "efectivo" })
-                            }
-                            className={`py-2.5 rounded-xl text-xs font-extrabold border transition cursor-pointer ${
+                            onClick={() => handleAlternarMetodoPago(cuenta)}
+                            className="px-2.5 py-1 rounded-lg text-[11px] font-extrabold bg-rose-600 hover:bg-rose-500 text-white border border-rose-400/50 transition cursor-pointer"
+                          >
+                            Cambiar método de pago
+                          </button>
+                        </div>
+                        <div className="grid grid-cols-2 gap-2">
+                          <div
+                            aria-disabled="true"
+                            className={`py-2.5 px-2 rounded-xl text-xs font-extrabold border text-center cursor-not-allowed select-none ${
                               estado.metodoPago === "efectivo"
                                 ? "bg-emerald-500/20 text-emerald-300 border-emerald-400"
-                                : "bg-zinc-950 text-zinc-400 border-zinc-800 hover:text-zinc-200"
+                                : "bg-zinc-950 text-zinc-500 border-zinc-800/80 opacity-60"
                             }`}
                           >
-                            Efectivo
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() =>
-                              actualizarEstadoCobro(cuenta.id, { metodoPago: "tarjeta" })
-                            }
-                            className={`py-2.5 rounded-xl text-xs font-extrabold border transition cursor-pointer ${
+                            {estado.metodoPago === "efectivo" ? "✓ Efectivo" : "Efectivo"}
+                          </div>
+                          <div
+                            aria-disabled="true"
+                            className={`py-2.5 px-2 rounded-xl text-xs font-extrabold border text-center cursor-not-allowed select-none ${
                               estado.metodoPago === "tarjeta"
                                 ? "bg-sky-500/20 text-sky-300 border-sky-400"
-                                : "bg-zinc-950 text-zinc-400 border-zinc-800 hover:text-zinc-200"
+                                : "bg-zinc-950 text-zinc-500 border-zinc-800/80 opacity-60"
                             }`}
                           >
-                            Tarjeta (Terminal)
-                          </button>
+                            {estado.metodoPago === "tarjeta"
+                              ? "✓ Tarjeta (Terminal)"
+                              : "Tarjeta (Terminal)"}
+                          </div>
                         </div>
                       </div>
                     </div>
