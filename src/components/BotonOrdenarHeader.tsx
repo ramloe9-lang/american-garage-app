@@ -35,7 +35,6 @@ const obtenerPrecio = (prod: Producto): number => {
   return Number(prod.precio_final ?? prod.precio_original ?? prod.precio ?? 0);
 };
 
-const TELEFONO_RESTAURANTE = '524425568390';
 const API_BASE =
   (import.meta as unknown as { env?: Record<string, string> }).env?.VITE_API_URL ||
   'https://american-garage-app.onrender.com';
@@ -48,6 +47,9 @@ export function BotonOrdenarHeader({ productosDisponibles = [] }: BotonOrdenarHe
 
   // Pantallita de confirmación al enviar ronda a cocina
   const [mostrarConfirmacionEnvio, setMostrarConfirmacionEnvio] = useState(false);
+
+  // Ventanita de confirmación al finalizar cuenta
+  const [mostrarCuentaFinalizada, setMostrarCuentaFinalizada] = useState(false);
 
   // Estado para el modal de personalización
   const [cantidad, setCantidad] = useState<number>(1);
@@ -82,8 +84,6 @@ export function BotonOrdenarHeader({ productosDisponibles = [] }: BotonOrdenarHe
       const rondasServidor = Array.isArray(data.rondas) ? data.rondas : [];
       setRondasConfirmadas(rondasServidor);
 
-      // Si la cuenta en el servidor ya fue finalizada (0 rondas) y no hay ítems en el carrito actual,
-      // limpiamos cualquier residuo local y cerramos el modal de resumen si estaba abierto.
       if (rondasServidor.length === 0) {
         localStorage.removeItem(`cuenta_mesa_${mesa}`);
         localStorage.removeItem(`carrito_pedidos_mesa_${mesa}`);
@@ -99,8 +99,6 @@ export function BotonOrdenarHeader({ productosDisponibles = [] }: BotonOrdenarHe
     }
   }, [mesa]);
 
-  // Cada vez que se abre la web app o cambia la mesa, limpiamos cualquier borrador viejo no confirmado
-  // y cargamos la cuenta compartida de esa mesa desde el backend.
   useEffect(() => {
     setCarrito([]);
     localStorage.removeItem('carrito_pedidos');
@@ -111,7 +109,6 @@ export function BotonOrdenarHeader({ productosDisponibles = [] }: BotonOrdenarHe
     cargarCuentaMesa();
   }, [mesa, cargarCuentaMesa]);
 
-  // Actualización periódica para mantener sincronizada la cuenta de la mesa entre dispositivos
   useEffect(() => {
     if (!mesa) return;
 
@@ -269,7 +266,7 @@ export function BotonOrdenarHeader({ productosDisponibles = [] }: BotonOrdenarHe
     }
   };
 
-  // 2. FINALIZAR CUENTA (resumen completo + método de pago + WhatsApp + limpia cuenta compartida)
+  // 2. FINALIZAR CUENTA (envía únicamente al sistema de Cuentas por Cobrar + muestra ventanita)
   const finalizarCuenta = async () => {
     if (!validarMesaActiva() || finalizandoCuenta) return;
 
@@ -290,28 +287,41 @@ export function BotonOrdenarHeader({ productosDisponibles = [] }: BotonOrdenarHe
     setFinalizandoCuenta(true);
 
     try {
-      let mensaje = `🧾 *FINALIZAR CUENTA - MESA ${mesa}* 🧾\n\n`;
-
-      rondasParaResumen.forEach((ronda) => {
-        mensaje += `*Ronda #${ronda.numeroRonda}:*\n`;
-        ronda.items.forEach((item, idx) => {
-          mensaje += `  ${idx + 1}. *${item.cantidad}x* ${item.nombre} ($${item.subtotal.toFixed(2)})\n`;
-          if (item.comentarios) {
-            mensaje += `     _Nota: ${item.comentarios}_\n`;
+      if (carrito.length > 0) {
+        const resRondaExtra = await fetch(
+          `${API_BASE}/api/v1/cocina/cuentas/${encodeURIComponent(String(mesa))}/rondas`,
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              items: carrito.map((item) => ({
+                producto_id: String(item.id),
+                nombre: item.nombre,
+                categoria: item.categoria,
+                precio: item.precio,
+                cantidad: item.cantidad,
+                comentarios: item.comentarios,
+                subtotal: item.subtotal,
+              })),
+              subtotal_ronda: subtotalCarritoActual,
+            }),
           }
-        });
-        mensaje += `  _Subtotal ronda: $${ronda.subtotalRonda.toFixed(2)}_\n\n`;
-      });
+        );
+        if (!resRondaExtra.ok) {
+          throw new Error(`Error al registrar ronda pendiente (${resRondaExtra.status})`);
+        }
+      }
 
-      mensaje += `💳 *Método de pago:* ${metodoPago}\n`;
-      mensaje += `*TOTAL GENERAL DE LA CUENTA: $${totalGeneralCuenta.toFixed(2)}*`;
+      const resCierre = await fetch(
+        `${API_BASE}/api/v1/cocina/cuentas/${encodeURIComponent(String(mesa))}`,
+        {
+          method: 'DELETE',
+        }
+      );
 
-      const urlWhatsapp = `https://wa.me/${TELEFONO_RESTAURANTE}?text=${encodeURIComponent(mensaje)}`;
-      window.open(urlWhatsapp, '_blank');
-
-      await fetch(`${API_BASE}/api/v1/cocina/cuentas/${encodeURIComponent(String(mesa))}`, {
-        method: 'DELETE',
-      });
+      if (!resCierre.ok) {
+        throw new Error(`Error al cerrar cuenta (${resCierre.status})`);
+      }
 
       setCarrito([]);
       setRondasConfirmadas([]);
@@ -322,10 +332,10 @@ export function BotonOrdenarHeader({ productosDisponibles = [] }: BotonOrdenarHe
       }
       setMostrarResumen(false);
       setMostrarCatalogo(false);
-      await cargarCuentaMesa();
+      setMostrarCuentaFinalizada(true);
     } catch (err) {
       console.error(err);
-      alert('⚠️ Hubo un problema al cerrar la cuenta en el servidor. Intenta de nuevo.');
+      alert('⚠️ Hubo un problema al finalizar la cuenta. Intenta de nuevo.');
     } finally {
       setFinalizandoCuenta(false);
     }
@@ -400,7 +410,6 @@ export function BotonOrdenarHeader({ productosDisponibles = [] }: BotonOrdenarHe
               )}
             </div>
 
-            {/* ACCIONES DENTRO DEL MENÚ DE ORDENAR */}
             {(carrito.length > 0 || rondasConfirmadas.length > 0) && (
               <div className="space-y-2 pt-2 border-t border-neutral-800">
                 {carrito.length > 0 && (
@@ -458,7 +467,6 @@ export function BotonOrdenarHeader({ productosDisponibles = [] }: BotonOrdenarHe
               Precio unitario: ${obtenerPrecio(productoSeleccionado).toFixed(2)}
             </p>
 
-            {/* Ajustar Cantidad */}
             <div className="flex items-center justify-between mb-4 bg-neutral-800 p-3 rounded-xl border border-neutral-700/50">
               <span className="text-sm font-medium text-gray-200">Cantidad:</span>
               <div className="flex items-center gap-3">
@@ -480,7 +488,6 @@ export function BotonOrdenarHeader({ productosDisponibles = [] }: BotonOrdenarHe
               </div>
             </div>
 
-            {/* Comentarios / Notas especiales */}
             <div className="mb-5">
               <label className="block text-xs font-medium text-gray-300 mb-1.5">
                 Notas especiales (ej. sin cebolla, aderezo extra...):
@@ -493,7 +500,6 @@ export function BotonOrdenarHeader({ productosDisponibles = [] }: BotonOrdenarHe
               />
             </div>
 
-            {/* Botón Confirmar */}
             <button
               type="button"
               onClick={agregarAlCarrito}
@@ -521,7 +527,6 @@ export function BotonOrdenarHeader({ productosDisponibles = [] }: BotonOrdenarHe
             </div>
 
             <div className="space-y-3 overflow-y-auto pr-1 flex-1 mb-3">
-              {/* Rondas ya confirmadas */}
               {rondasConfirmadas.map((ronda) => (
                 <div
                   key={ronda.numeroRonda}
@@ -547,7 +552,6 @@ export function BotonOrdenarHeader({ productosDisponibles = [] }: BotonOrdenarHe
                 </div>
               ))}
 
-              {/* Ítems actuales aún sin confirmar */}
               {carrito.map((item, index) => (
                 <div
                   key={index}
@@ -576,7 +580,6 @@ export function BotonOrdenarHeader({ productosDisponibles = [] }: BotonOrdenarHe
               ))}
             </div>
 
-            {/* SECCIÓN DE MÉTODO DE PAGO PARA FINALIZAR CUENTA */}
             <div className="bg-neutral-800/50 border border-neutral-700/50 p-3 rounded-xl mb-3">
               <label className="block text-xs font-bold text-gray-300 mb-2">
                 💳 Método de pago para finalizar cuenta:
@@ -647,6 +650,28 @@ export function BotonOrdenarHeader({ productosDisponibles = [] }: BotonOrdenarHe
             <button
               type="button"
               onClick={() => setMostrarConfirmacionEnvio(false)}
+              className="w-full bg-green-600 hover:bg-green-500 text-white font-bold py-2.5 rounded-xl text-xs transition-colors"
+            >
+              Aceptar
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL 5: CUENTA FINALIZADA CORRECTAMENTE */}
+      {mostrarCuentaFinalizada && (
+        <div className="fixed inset-0 bg-black/85 backdrop-blur-sm z-[85] flex justify-center items-center p-4">
+          <div className="bg-neutral-900 border border-green-500/40 w-full max-w-sm rounded-2xl p-6 text-center shadow-2xl">
+            <div className="w-12 h-12 rounded-full bg-green-500/20 text-green-400 flex items-center justify-center text-2xl mx-auto mb-3">
+              ✓
+            </div>
+            <h3 className="text-base font-bold text-white mb-1">¡Cuenta finalizada!</h3>
+            <p className="text-sm text-neutral-200 mb-5">
+              Tu cuenta ha sido finalizada correctamente, en un momento vendrá el mesero a entregártela.
+            </p>
+            <button
+              type="button"
+              onClick={() => setMostrarCuentaFinalizada(false)}
               className="w-full bg-green-600 hover:bg-green-500 text-white font-bold py-2.5 rounded-xl text-xs transition-colors"
             >
               Aceptar
