@@ -1,8 +1,10 @@
 """Módulo de Comandas y Kitchen Display System (KDS) para /cocina."""
+import calendar
 import threading
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Literal
+from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Body, HTTPException
 from pydantic import BaseModel, Field
@@ -10,6 +12,33 @@ from pydantic import BaseModel, Field
 TipoEstacion = Literal["alimento", "bebida"]
 FiltroEstacion = Literal["todos", "alimento", "bebida"]
 MetodoPago = Literal["efectivo", "tarjeta"]
+
+TZ_LOCAL = ZoneInfo("America/Mexico_City")
+
+MESES_ES = {
+    1: "Enero",
+    2: "Febrero",
+    3: "Marzo",
+    4: "Abril",
+    5: "Mayo",
+    6: "Junio",
+    7: "Julio",
+    8: "Agosto",
+    9: "Septiembre",
+    10: "Octubre",
+    11: "Noviembre",
+    12: "Diciembre",
+}
+
+DIAS_ES = {
+    0: "Lunes",
+    1: "Martes",
+    2: "Miércoles",
+    3: "Jueves",
+    4: "Viernes",
+    5: "Sábado",
+    6: "Domingo",
+}
 
 
 class ItemComandaIn(BaseModel):
@@ -147,11 +176,42 @@ _cuentas_pagadas: list[CuentaPagadaOut] = []
 _llamados_mesero: list[LlamadoMeseroOut] = []
 _entregas_historial: list[RegistroEntregaOut] = []
 
+# Control de día operativo (3am a 3am) y registro mensual de ventas
+_reinicios_por_dia_op: dict[str, int] = {}
+_mes_registro_actual: tuple[int, int] | None = None  # (year, month)
+_registro_ventas_dias: dict[str, dict] = {}  # clave: YYYY-MM-DD del día operativo
+
 CATEGORIAS_BEBIDA = {
     "bebida", "bebidas", "cafe", "café", "refresco", "refrescos",
     "te", "té", "malteada", "malteadas", "cerveza", "cervezas",
     "jugo", "jugos", "agua", "aguas", "limonada", "coctel", "cóctel",
 }
+
+
+def _obtener_dia_operativo(dt_utc: datetime | None = None) -> tuple[str, str, int, int]:
+    """
+    Calcula el día operativo que inicia a las 03:00 AM y termina a las 03:00 AM del día siguiente.
+    Retorna: (clave_yyyy_mm_dd, etiqueta_legible, mes_num, anio_num)
+    """
+    base = (dt_utc or datetime.now(timezone.utc)).astimezone(TZ_LOCAL)
+    if base.hour < 3:
+        dia_op = (base - timedelta(days=1)).date()
+    else:
+        dia_op = base.date()
+
+    clave = dia_op.isoformat()
+    etiqueta = f"{DIAS_ES[dia_op.weekday()]} {dia_op.day} de {MESES_ES[dia_op.month]} {dia_op.year}"
+    return clave, etiqueta, dia_op.month, dia_op.year
+
+
+def _sincronizar_ciclo_mensual(anio: int, mes: int) -> None:
+    """Reinicia el registro de ventas cada 1.º de mes o al alcanzar 30 días distintos."""
+    global _mes_registro_actual
+    if _mes_registro_actual != (anio, mes):
+        _registro_ventas_dias.clear()
+        _mes_registro_actual = (anio, mes)
+    elif len(_registro_ventas_dias) >= 30:
+        _registro_ventas_dias.clear()
 
 
 def _inferir_tipo(producto_id: str, categoria: str, tipo_explicito: str | None) -> TipoEstacion:
@@ -162,6 +222,99 @@ def _inferir_tipo(producto_id: str, categoria: str, tipo_explicito: str | None) 
     if categoria.strip().lower() in CATEGORIAS_BEBIDA:
         return "bebida"
     return "alimento"
+
+
+def _es_combo(producto_id: str, categoria: str, nombre: str) -> bool:
+    txt = f"{producto_id} {categoria} {nombre}".lower()
+    return "combo" in txt
+
+
+def _calcular_metricas_cuentas(cuentas: list[CuentaPagadaOut]) -> dict:
+    subtotal_ventas = round(sum(float(c.subtotal) for c in cuentas), 2)
+    propinas_totales = round(sum(float(c.propina) for c in cuentas), 2)
+    total_general = round(sum(float(c.total_final) for c in cuentas), 2)
+    total_efectivo = round(
+        sum(float(c.total_final) for c in cuentas if c.metodo_pago == "efectivo"), 2
+    )
+    total_tarjeta = round(
+        sum(float(c.total_final) for c in cuentas if c.metodo_pago == "tarjeta"), 2
+    )
+
+    conteo_general: dict[str, dict] = {}
+    conteo_alimento: dict[str, dict] = {}
+    conteo_bebida: dict[str, dict] = {}
+    conteo_combo: dict[str, dict] = {}
+
+    for cuenta in cuentas:
+        for ronda in cuenta.rondas:
+            for item in ronda.get("items", []):
+                nombre = str(item.get("nombre", "")).strip()
+                if not nombre:
+                    continue
+                cantidad = int(item.get("cantidad", 0))
+                subtotal_item = round(float(item.get("subtotal", 0)), 2)
+                categoria = str(item.get("categoria", "")).strip()
+                producto_id = str(item.get("producto_id", "")).strip()
+                es_combo = _es_combo(producto_id, categoria, nombre)
+                tipo_item = _inferir_tipo(producto_id, categoria, None)
+
+                clave = nombre.lower()
+                entry_gen = conteo_general.setdefault(
+                    clave, {"nombre": nombre, "cantidad": 0, "subtotal": 0.0}
+                )
+                entry_gen["cantidad"] += cantidad
+                entry_gen["subtotal"] = round(entry_gen["subtotal"] + subtotal_item, 2)
+
+                if es_combo:
+                    entry_cbo = conteo_combo.setdefault(
+                        clave, {"nombre": nombre, "cantidad": 0, "subtotal": 0.0}
+                    )
+                    entry_cbo["cantidad"] += cantidad
+                    entry_cbo["subtotal"] = round(entry_cbo["subtotal"] + subtotal_item, 2)
+
+                if tipo_item == "bebida":
+                    entry_beb = conteo_bebida.setdefault(
+                        clave, {"nombre": nombre, "cantidad": 0, "subtotal": 0.0}
+                    )
+                    entry_beb["cantidad"] += cantidad
+                    entry_beb["subtotal"] = round(entry_beb["subtotal"] + subtotal_item, 2)
+                else:
+                    entry_ali = conteo_alimento.setdefault(
+                        clave, {"nombre": nombre, "cantidad": 0, "subtotal": 0.0}
+                    )
+                    entry_ali["cantidad"] += cantidad
+                    entry_ali["subtotal"] = round(entry_ali["subtotal"] + subtotal_item, 2)
+
+    def _mas_vendido(dic: dict[str, dict]) -> dict | None:
+        if not dic:
+            return None
+        ganador = max(dic.values(), key=lambda x: x["cantidad"])
+        if ganador["cantidad"] <= 0:
+            return None
+        return {"nombre": ganador["nombre"], "cantidad": ganador["cantidad"]}
+
+    alimentos_lista = sorted(conteo_alimento.values(), key=lambda x: (-x["cantidad"], x["nombre"]))
+    bebidas_lista = sorted(conteo_bebida.values(), key=lambda x: (-x["cantidad"], x["nombre"]))
+    combos_lista = sorted(conteo_combo.values(), key=lambda x: (-x["cantidad"], x["nombre"]))
+
+    return {
+        "cantidad_cuentas": len(cuentas),
+        "subtotal_ventas": subtotal_ventas,
+        "propinas_totales": propinas_totales,
+        "total_general": total_general,
+        "total_efectivo": total_efectivo,
+        "total_tarjeta": total_tarjeta,
+        "producto_mas_vendido": _mas_vendido(conteo_general),
+        "alimento_mas_vendido": _mas_vendido(conteo_alimento),
+        "bebida_mas_vendido": _mas_vendido(conteo_bebida),
+        "combo_mas_vendido": _mas_vendido(conteo_combo),
+        "desglose_alimentos": alimentos_lista,
+        "subtotal_alimentos": round(sum(x["subtotal"] for x in alimentos_lista), 2),
+        "desglose_bebidas": bebidas_lista,
+        "subtotal_bebidas": round(sum(x["subtotal"] for x in bebidas_lista), 2),
+        "desglose_combos": combos_lista,
+        "subtotal_combos": round(sum(x["subtotal"] for x in combos_lista), 2),
+    }
 
 
 def _asegurar_cuenta_activa(mesa_key: str) -> tuple[str, int]:
@@ -628,87 +781,160 @@ def registrar_pago_cuenta(cuenta_cobro_id: str, payload: PagarCuentaIn) -> Cuent
 
 @router.get("/cuentas-pagadas", response_model=list[CuentaPagadaOut])
 def listar_cuentas_pagadas() -> list[CuentaPagadaOut]:
-    """Devuelve el historial de cuentas pagadas (base para el resumen del día)."""
+    """Devuelve el historial de cuentas pagadas."""
     with _lock:
         return list(_cuentas_pagadas)
 
 
 @router.get("/resumen-dia")
 def obtener_resumen_dia() -> dict:
-    """Calcula el resumen del día a partir de las cuentas pagadas."""
+    """Calcula el resumen del día operativo actual (3am a 3am) y el número de reinicio del día."""
     with _lock:
-        hoy_utc = datetime.now(timezone.utc).date()
-        cuentas_hoy = [c for c in _cuentas_pagadas if c.pagada_en.date() == hoy_utc]
-        base_cuentas = cuentas_hoy if cuentas_hoy else list(_cuentas_pagadas)
+        clave_dia, etiqueta_dia, mes_num, anio_num = _obtener_dia_operativo()
+        _sincronizar_ciclo_mensual(anio_num, mes_num)
 
-        subtotal_ventas = round(sum(float(c.subtotal) for c in base_cuentas), 2)
-        propinas_totales = round(sum(float(c.propina) for c in base_cuentas), 2)
-        total_general = round(sum(float(c.total_final) for c in base_cuentas), 2)
-
-        total_efectivo = round(
-            sum(float(c.total_final) for c in base_cuentas if c.metodo_pago == "efectivo"), 2
-        )
-        total_tarjeta = round(
-            sum(float(c.total_final) for c in base_cuentas if c.metodo_pago == "tarjeta"), 2
-        )
-
-        conteo_general: dict[str, dict] = {}
-        conteo_alimento: dict[str, dict] = {}
-        conteo_bebida: dict[str, dict] = {}
-        conteo_combo: dict[str, dict] = {}
-
-        for cuenta in base_cuentas:
-            for ronda in cuenta.rondas:
-                for item in ronda.get("items", []):
-                    nombre = str(item.get("nombre", "")).strip()
-                    if not nombre:
-                        continue
-                    cantidad = int(item.get("cantidad", 0))
-                    categoria = str(item.get("categoria", "")).strip()
-                    producto_id = str(item.get("producto_id", "")).strip()
-                    es_combo = "combo" in categoria.lower() or "combo" in nombre.lower()
-                    tipo_item = _inferir_tipo(producto_id, categoria, None)
-
-                    clave = nombre.lower()
-                    entry_gen = conteo_general.setdefault(clave, {"nombre": nombre, "cantidad": 0})
-                    entry_gen["cantidad"] += cantidad
-
-                    if es_combo:
-                        entry_cbo = conteo_combo.setdefault(clave, {"nombre": nombre, "cantidad": 0})
-                        entry_cbo["cantidad"] += cantidad
-
-                    if tipo_item == "bebida":
-                        entry_beb = conteo_bebida.setdefault(clave, {"nombre": nombre, "cantidad": 0})
-                        entry_beb["cantidad"] += cantidad
-                    else:
-                        entry_ali = conteo_alimento.setdefault(clave, {"nombre": nombre, "cantidad": 0})
-                        entry_ali["cantidad"] += cantidad
-
-        def _mas_vendido(dic: dict[str, dict]) -> dict | None:
-            if not dic:
-                return None
-            ganador = max(dic.values(), key=lambda x: x["cantidad"])
-            return ganador if ganador["cantidad"] > 0 else None
+        cuentas_dia = [
+            c for c in _cuentas_pagadas if _obtener_dia_operativo(c.pagada_en)[0] == clave_dia
+        ]
+        metricas = _calcular_metricas_cuentas(cuentas_dia)
+        reinicios_previos = _reinicios_por_dia_op.get(clave_dia, 0)
+        numero_reinicio_dia = reinicios_previos + 1
 
         return {
-            "cantidad_cuentas": len(base_cuentas),
-            "subtotal_ventas": subtotal_ventas,
-            "propinas_totales": propinas_totales,
-            "total_general": total_general,
-            "total_efectivo": total_efectivo,
-            "total_tarjeta": total_tarjeta,
-            "producto_mas_vendido": _mas_vendido(conteo_general),
-            "alimento_mas_vendido": _mas_vendido(conteo_alimento),
-            "bebida_mas_vendido": _mas_vendido(conteo_bebida),
-            "combo_mas_vendido": _mas_vendido(conteo_combo),
+            "fecha_operativa": clave_dia,
+            "fecha_operativa_etiqueta": etiqueta_dia,
+            "numero_reinicio_dia": numero_reinicio_dia,
+            "reinicios_realizados_hoy": reinicios_previos,
+            **metricas,
         }
 
 
 @router.post("/cerrar-dia")
 def cerrar_dia_actual() -> dict:
-    """Reinicia absolutamente todo el estado de cocina, estatus de mesas, cuentas y ventas del día."""
+    """
+    Registra el corte en el historial diario (acumulando cuentas y desgloses del día operativo 3am-3am)
+    y reinicia todo el estado activo de cocina, estatus de mesas y cuentas.
+    """
     with _lock:
+        clave_dia, etiqueta_dia, mes_num, anio_num = _obtener_dia_operativo()
+        _sincronizar_ciclo_mensual(anio_num, mes_num)
+
+        reinicio_num = _reinicios_por_dia_op.get(clave_dia, 0) + 1
+        _reinicios_por_dia_op[clave_dia] = reinicio_num
+
+        metricas_corte = _calcular_metricas_cuentas(_cuentas_pagadas)
         total_cerradas = len(_cuentas_pagadas)
+
+        registro_existente = _registro_ventas_dias.get(clave_dia)
+        if not registro_existente:
+            _registro_ventas_dias[clave_dia] = {
+                "fecha_operativa": clave_dia,
+                "fecha_operativa_etiqueta": etiqueta_dia,
+                "reinicios_realizados": reinicio_num,
+                "cuentas_totales": metricas_corte["cantidad_cuentas"],
+                "subtotal_ventas": metricas_corte["subtotal_ventas"],
+                "propinas_totales": metricas_corte["propinas_totales"],
+                "total_general": metricas_corte["total_general"],
+                "total_efectivo": metricas_corte["total_efectivo"],
+                "total_tarjeta": metricas_corte["total_tarjeta"],
+                "producto_mas_vendido": metricas_corte["producto_mas_vendido"],
+                "alimento_mas_vendido": metricas_corte["alimento_mas_vendido"],
+                "bebida_mas_vendido": metricas_corte["bebida_mas_vendido"],
+                "combo_mas_vendido": metricas_corte["combo_mas_vendido"],
+                "desglose_alimentos": metricas_corte["desglose_alimentos"],
+                "subtotal_alimentos": metricas_corte["subtotal_alimentos"],
+                "desglose_bebidas": metricas_corte["desglose_bebidas"],
+                "subtotal_bebidas": metricas_corte["subtotal_bebidas"],
+                "desglose_combos": metricas_corte["desglose_combos"],
+                "subtotal_combos": metricas_corte["subtotal_combos"],
+            }
+        else:
+            # Acumulamos las cuentas y montos del nuevo reinicio en el mismo día operativo
+            cuentas_acum = int(registro_existente["cuentas_totales"]) + int(
+                metricas_corte["cantidad_cuentas"]
+            )
+            sub_acum = round(
+                float(registro_existente["subtotal_ventas"]) + float(metricas_corte["subtotal_ventas"]),
+                2,
+            )
+            prop_acum = round(
+                float(registro_existente["propinas_totales"]) + float(metricas_corte["propinas_totales"]),
+                2,
+            )
+            tot_acum = round(
+                float(registro_existente["total_general"]) + float(metricas_corte["total_general"]),
+                2,
+            )
+            efe_acum = round(
+                float(registro_existente["total_efectivo"]) + float(metricas_corte["total_efectivo"]),
+                2,
+            )
+            tar_acum = round(
+                float(registro_existente["total_tarjeta"]) + float(metricas_corte["total_tarjeta"]),
+                2,
+            )
+
+            def _combinar_desgloses(base_list: list[dict], extra_list: list[dict]) -> list[dict]:
+                mapa: dict[str, dict] = {}
+                for row in base_list + extra_list:
+                    key = str(row["nombre"]).strip().lower()
+                    actual = mapa.setdefault(
+                        key, {"nombre": row["nombre"], "cantidad": 0, "subtotal": 0.0}
+                    )
+                    actual["cantidad"] += int(row["cantidad"])
+                    actual["subtotal"] = round(actual["subtotal"] + float(row["subtotal"]), 2)
+                return sorted(mapa.values(), key=lambda x: (-x["cantidad"], x["nombre"]))
+
+            ali_comb = _combinar_desgloses(
+                registro_existente.get("desglose_alimentos", []),
+                metricas_corte["desglose_alimentos"],
+            )
+            beb_comb = _combinar_desgloses(
+                registro_existente.get("desglose_bebidas", []),
+                metricas_corte["desglose_bebidas"],
+            )
+            cbo_comb = _combinar_desgloses(
+                registro_existente.get("desglose_combos", []),
+                metricas_corte["desglose_combos"],
+            )
+
+            gen_mapa: dict[str, dict] = {}
+            for row in ali_comb + beb_comb:
+                k = str(row["nombre"]).strip().lower()
+                g = gen_mapa.setdefault(k, {"nombre": row["nombre"], "cantidad": 0})
+                g["cantidad"] += int(row["cantidad"])
+
+            def _top(lista_ord: list[dict]) -> dict | None:
+                if not lista_ord or lista_ord[0]["cantidad"] <= 0:
+                    return None
+                return {"nombre": lista_ord[0]["nombre"], "cantidad": lista_ord[0]["cantidad"]}
+
+            top_gen = None
+            if gen_mapa:
+                g_win = max(gen_mapa.values(), key=lambda x: x["cantidad"])
+                if g_win["cantidad"] > 0:
+                    top_gen = g_win
+
+            registro_existente.update({
+                "reinicios_realizados": reinicio_num,
+                "cuentas_totales": cuentas_acum,
+                "subtotal_ventas": sub_acum,
+                "propinas_totales": prop_acum,
+                "total_general": tot_acum,
+                "total_efectivo": efe_acum,
+                "total_tarjeta": tar_acum,
+                "producto_mas_vendido": top_gen,
+                "alimento_mas_vendido": _top(ali_comb),
+                "bebida_mas_vendido": _top(beb_comb),
+                "combo_mas_vendido": _top(cbo_comb),
+                "desglose_alimentos": ali_comb,
+                "subtotal_alimentos": round(sum(x["subtotal"] for x in ali_comb), 2),
+                "desglose_bebidas": beb_comb,
+                "subtotal_bebidas": round(sum(x["subtotal"] for x in beb_comb), 2),
+                "desglose_combos": cbo_comb,
+                "subtotal_combos": round(sum(x["subtotal"] for x in cbo_comb), 2),
+            })
+
         _cuentas_pagadas.clear()
         _cuentas_por_cobrar.clear()
         _cuentas_por_mesa.clear()
@@ -718,4 +944,37 @@ def cerrar_dia_actual() -> dict:
         _comandas.clear()
         _entregas_historial.clear()
         _llamados_mesero.clear()
-        return {"cerrado": True, "cuentas_cerradas": total_cerradas}
+        return {
+            "cerrado": True,
+            "cuentas_cerradas": total_cerradas,
+            "numero_reinicio_dia": reinicio_num,
+        }
+
+
+@router.get("/registro-ventas")
+def obtener_registro_ventas() -> dict:
+    """Devuelve el historial mensual de registro de ventas y el aviso de proximidad a reinicio."""
+    with _lock:
+        _, _, mes_num, anio_num = _obtener_dia_operativo()
+        _sincronizar_ciclo_mensual(anio_num, mes_num)
+
+        hoy_local = datetime.now(timezone.utc).astimezone(TZ_LOCAL).date()
+        ultimo_dia_mes = calendar.monthrange(hoy_local.year, hoy_local.month)[1]
+        dias_restantes_mes = max(0, ultimo_dia_mes - hoy_local.day)
+        dias_restantes_cupo = max(0, 30 - len(_registro_ventas_dias))
+        dias_restantes = min(dias_restantes_mes, dias_restantes_cupo)
+        alerta_reinicio_proximo = dias_restantes <= 3
+
+        dias_ordenados = sorted(
+            _registro_ventas_dias.values(),
+            key=lambda d: d["fecha_operativa"],
+            reverse=True,
+        )
+
+        return {
+            "mes_nombre": MESES_ES[mes_num],
+            "anio": anio_num,
+            "dias_restantes_reseteo": dias_restantes,
+            "alerta_reinicio_proximo": alerta_reinicio_proximo,
+            "registros": dias_ordenados,
+        }
