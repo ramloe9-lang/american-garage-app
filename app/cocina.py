@@ -51,6 +51,7 @@ class ComandaOut(BaseModel):
     mesa: str
     numero_ronda: int
     cuenta_id: str = "default"
+    numero_cuenta: int = 1
     creada_en: datetime
     items: list[ItemComandaOut]
     completada_total: bool = False
@@ -76,6 +77,7 @@ class CuentaPorCobrarOut(BaseModel):
     id: str
     mesa: str
     cuenta_id: str
+    numero_cuenta: int = 1
     rondas: list[dict]
     subtotal: float
     metodo_pago: MetodoPago = "efectivo"
@@ -91,6 +93,7 @@ class CuentaPagadaOut(BaseModel):
     id: str
     mesa: str
     cuenta_id: str
+    numero_cuenta: int = 1
     rondas: list[dict]
     subtotal: float
     propina: float
@@ -137,6 +140,8 @@ _lock = threading.Lock()
 _comandas: list[ComandaOut] = []
 _cuentas_por_mesa: dict[str, list[dict]] = {}
 _cuenta_activa_id_por_mesa: dict[str, str] = {}
+_numero_cuenta_activa_por_mesa: dict[str, int] = {}
+_contador_cuentas_por_mesa: dict[str, int] = {}
 _cuentas_por_cobrar: list[CuentaPorCobrarOut] = []
 _cuentas_pagadas: list[CuentaPagadaOut] = []
 _llamados_mesero: list[LlamadoMeseroOut] = []
@@ -159,10 +164,27 @@ def _inferir_tipo(producto_id: str, categoria: str, tipo_explicito: str | None) 
     return "alimento"
 
 
-def _obtener_cuenta_id_actual(mesa_key: str) -> str:
+def _asegurar_cuenta_activa(mesa_key: str) -> tuple[str, int]:
+    """Devuelve (cuenta_id, numero_cuenta) asignando numeración cronológica fija por mesa."""
     if mesa_key not in _cuenta_activa_id_por_mesa:
+        siguiente_num = _contador_cuentas_por_mesa.get(mesa_key, 0) + 1
+        _contador_cuentas_por_mesa[mesa_key] = siguiente_num
         _cuenta_activa_id_por_mesa[mesa_key] = str(uuid.uuid4())[:8]
-    return _cuenta_activa_id_por_mesa[mesa_key]
+        _numero_cuenta_activa_por_mesa[mesa_key] = siguiente_num
+    return (
+        _cuenta_activa_id_por_mesa[mesa_key],
+        _numero_cuenta_activa_por_mesa.get(mesa_key, 1),
+    )
+
+
+def _rotar_cuenta_activa(mesa_key: str) -> tuple[str, int]:
+    """Crea una nueva cuenta activa para la mesa con el siguiente número cronológico."""
+    siguiente_num = _contador_cuentas_por_mesa.get(mesa_key, 0) + 1
+    _contador_cuentas_por_mesa[mesa_key] = siguiente_num
+    nuevo_id = str(uuid.uuid4())[:8]
+    _cuenta_activa_id_por_mesa[mesa_key] = nuevo_id
+    _numero_cuenta_activa_por_mesa[mesa_key] = siguiente_num
+    return nuevo_id, siguiente_num
 
 
 def _consolidar_historial_por_cuenta_y_ronda(registros: list[RegistroEntregaOut]) -> list[dict]:
@@ -183,6 +205,7 @@ def _consolidar_historial_por_cuenta_y_ronda(registros: list[RegistroEntregaOut]
                 "mesa": mesa_key,
                 "numero_ronda": int(reg.numero_ronda),
                 "cuenta_id": cuenta_key,
+                "numero_cuenta": int(reg.numero_cuenta or 1),
                 "estacion": reg.estacion,
                 "items_por_id": {},
                 "listo_en": reg.listo_en,
@@ -211,7 +234,7 @@ def _consolidar_historial_por_cuenta_y_ronda(registros: list[RegistroEntregaOut]
         cuenta_key = entry["cuenta_id"]
         mapa_mesa = contador_cuentas_por_mesa.setdefault(mesa_key, {})
         if cuenta_key not in mapa_mesa:
-            mapa_mesa[cuenta_key] = len(mapa_mesa) + 1
+            mapa_mesa[cuenta_key] = entry["numero_cuenta"] or (len(mapa_mesa) + 1)
         numero_por_clave[clave] = mapa_mesa[cuenta_key]
 
     resultado: list[dict] = []
@@ -256,12 +279,13 @@ def crear_comanda(payload: NuevaComandaIn) -> ComandaOut:
         for it in payload.items
     ]
     with _lock:
-        cuenta_id = _obtener_cuenta_id_actual(mesa_key)
+        cuenta_id, numero_cuenta = _asegurar_cuenta_activa(mesa_key)
         comanda = ComandaOut(
             id=str(uuid.uuid4())[:8],
             mesa=mesa_key,
             numero_ronda=payload.numero_ronda,
             cuenta_id=cuenta_id,
+            numero_cuenta=numero_cuenta,
             creada_en=ahora,
             items=items_out,
             completada_total=False,
@@ -364,6 +388,7 @@ def marcar_entregado_mesa(payload: EntregarMesaIn) -> RegistroEntregaOut:
             mesa=comanda.mesa,
             numero_ronda=comanda.numero_ronda,
             cuenta_id=comanda.cuenta_id,
+            numero_cuenta=comanda.numero_cuenta,
             estacion=payload.estacion,
             items=items_historial,
             listo_en=listo_en,
@@ -406,6 +431,7 @@ def obtener_estatus_mesas() -> dict:
                 "mesa": c.mesa,
                 "numero_ronda": c.numero_ronda,
                 "cuenta_id": c.cuenta_id,
+                "numero_cuenta": c.numero_cuenta,
                 "estacion": origen,
                 "listo_en": listo_en,
                 "items": [it.model_dump() for it in listos_sin_entregar],
@@ -480,10 +506,12 @@ def obtener_cuenta_mesa(mesa: str) -> dict:
         raise HTTPException(status_code=400, detail="Mesa inválida.")
 
     with _lock:
-        _obtener_cuenta_id_actual(mesa_key)
+        cuenta_id, numero_cuenta = _asegurar_cuenta_activa(mesa_key)
         rondas = list(_cuentas_por_mesa.get(mesa_key, []))
         return {
             "mesa": mesa_key,
+            "cuenta_id": cuenta_id,
+            "numero_cuenta": numero_cuenta,
             "rondas": rondas,
             "siguiente_numero_ronda": len(rondas) + 1,
         }
@@ -497,7 +525,7 @@ def agregar_ronda_cuenta(mesa: str, payload: CrearRondaCuentaRequest) -> dict:
         raise HTTPException(status_code=400, detail="Mesa inválida.")
 
     with _lock:
-        _obtener_cuenta_id_actual(mesa_key)
+        cuenta_id, numero_cuenta = _asegurar_cuenta_activa(mesa_key)
         rondas_actuales = _cuentas_por_mesa.setdefault(mesa_key, [])
         numero_ronda = len(rondas_actuales) + 1
         nueva_ronda = {
@@ -509,6 +537,8 @@ def agregar_ronda_cuenta(mesa: str, payload: CrearRondaCuentaRequest) -> dict:
         rondas_actuales.append(nueva_ronda)
         return {
             "mesa": mesa_key,
+            "cuenta_id": cuenta_id,
+            "numero_cuenta": numero_cuenta,
             "ronda": nueva_ronda,
             "rondas": list(rondas_actuales),
         }
@@ -534,7 +564,7 @@ def cerrar_cuenta_mesa(
     ahora = datetime.now(timezone.utc)
     with _lock:
         rondas_cerradas = _cuentas_por_mesa.pop(mesa_key, [])
-        cuenta_id_cerrada = _obtener_cuenta_id_actual(mesa_key)
+        cuenta_id_cerrada, numero_cuenta_cerrada = _asegurar_cuenta_activa(mesa_key)
 
         if rondas_cerradas:
             subtotal = round(sum(float(r.get("subtotalRonda", 0)) for r in rondas_cerradas), 2)
@@ -542,22 +572,28 @@ def cerrar_cuenta_mesa(
                 id=str(uuid.uuid4())[:8],
                 mesa=mesa_key,
                 cuenta_id=cuenta_id_cerrada,
+                numero_cuenta=numero_cuenta_cerrada,
                 rondas=list(rondas_cerradas),
                 subtotal=subtotal,
                 metodo_pago=pago_elegido,
                 solicitada_en=ahora,
             )
-            _cuentas_por_cobrar.insert(0, cuenta_cobro)
+            _cuentas_por_cobrar.append(cuenta_cobro)
 
-        _cuenta_activa_id_por_mesa[mesa_key] = str(uuid.uuid4())[:8]
-        return {"mesa": mesa_key, "cerrada": True, "metodo_pago": pago_elegido}
+        _rotar_cuenta_activa(mesa_key)
+        return {
+            "mesa": mesa_key,
+            "numero_cuenta": numero_cuenta_cerrada,
+            "cerrada": True,
+            "metodo_pago": pago_elegido,
+        }
 
 
 @router.get("/cuentas-por-cobrar", response_model=list[CuentaPorCobrarOut])
 def listar_cuentas_por_cobrar() -> list[CuentaPorCobrarOut]:
-    """Devuelve las cuentas finalizadas por el comensal pendientes de cobro."""
+    """Devuelve las cuentas finalizadas por el comensal pendientes de cobro en orden cronológico."""
     with _lock:
-        return list(_cuentas_por_cobrar)
+        return sorted(_cuentas_por_cobrar, key=lambda c: (c.numero_cuenta, c.solicitada_en))
 
 
 @router.post("/cuentas-por-cobrar/{cuenta_cobro_id}/pagar", response_model=CuentaPagadaOut)
@@ -577,6 +613,7 @@ def registrar_pago_cuenta(cuenta_cobro_id: str, payload: PagarCuentaIn) -> Cuent
             id=cuenta.id,
             mesa=cuenta.mesa,
             cuenta_id=cuenta.cuenta_id,
+            numero_cuenta=cuenta.numero_cuenta,
             rondas=cuenta.rondas,
             subtotal=cuenta.subtotal,
             propina=propina_val,
@@ -676,6 +713,8 @@ def cerrar_dia_actual() -> dict:
         _cuentas_por_cobrar.clear()
         _cuentas_por_mesa.clear()
         _cuenta_activa_id_por_mesa.clear()
+        _numero_cuenta_activa_por_mesa.clear()
+        _contador_cuentas_por_mesa.clear()
         _comandas.clear()
         _entregas_historial.clear()
         _llamados_mesero.clear()
