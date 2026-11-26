@@ -25,6 +25,7 @@ export interface Comanda {
   mesa: string;
   numero_ronda: number;
   cuenta_id?: string;
+  numero_cuenta?: number;
   creada_en: string;
   items: ItemComanda[];
   completada_total: boolean;
@@ -37,6 +38,7 @@ export interface EntregaPendienteMesa {
   mesa: string;
   numero_ronda: number;
   cuenta_id?: string;
+  numero_cuenta?: number;
   estacion: FiltroEstacion;
   listo_en: string;
   items: ItemComanda[];
@@ -92,6 +94,7 @@ export interface CuentaPorCobrar {
   id: string;
   mesa: string;
   cuenta_id: string;
+  numero_cuenta?: number;
   rondas: RondaCuentaCobro[];
   subtotal: number;
   metodo_pago?: MetodoPago;
@@ -252,10 +255,15 @@ export default function CocinaView() {
 
       if (resCuentas.ok) {
         const dataCuentas: CuentaPorCobrar[] = await resCuentas.json();
-        setCuentasPorCobrar(dataCuentas);
+        const ordenadas = [...dataCuentas].sort(
+          (a, b) =>
+            (a.numero_cuenta ?? 1) - (b.numero_cuenta ?? 1) ||
+            new Date(a.solicitada_en).getTime() - new Date(b.solicitada_en).getTime()
+        );
+        setCuentasPorCobrar(ordenadas);
         setCobroPorCuentaId((prev) => {
           const siguiente = { ...prev };
-          for (const cta of dataCuentas) {
+          for (const cta of ordenadas) {
             if (!siguiente[cta.id]) {
               siguiente[cta.id] = {
                 propinaMonto: 0,
@@ -764,7 +772,7 @@ export default function CocinaView() {
                   </div>
 
                   <div className="p-3 rounded-xl bg-zinc-950 border border-zinc-800">
-                    <span className="text-zinc-400 block">Bebida más vendido</span>
+                    <span className="text-zinc-400 block">Bebida más vendida</span>
                     <strong className="text-sm text-white mt-0.5 block">
                       {resumenDia.bebida_mas_vendido
                         ? `${resumenDia.bebida_mas_vendido.nombre} (${resumenDia.bebida_mas_vendido.cantidad})`
@@ -892,6 +900,7 @@ export default function CocinaView() {
                 const totalFinal = Math.round((cuenta.subtotal + estado.propinaMonto) * 100) / 100;
                 const propina10 = Math.round(cuenta.subtotal * 0.1 * 100) / 100;
                 const propina20 = Math.round(cuenta.subtotal * 0.2 * 100) / 100;
+                const numeroCuentaLabel = cuenta.numero_cuenta ?? 1;
 
                 return (
                   <article
@@ -902,7 +911,7 @@ export default function CocinaView() {
                       <div className="flex items-center justify-between pb-3 border-b border-zinc-800">
                         <div>
                           <span className="text-xl font-extrabold text-white">
-                            Mesa {cuenta.mesa}
+                            Mesa {cuenta.mesa} · Cuenta #{numeroCuentaLabel}
                           </span>
                           <span className="ml-2 text-xs font-semibold uppercase px-2.5 py-0.5 rounded-full bg-amber-500/20 text-amber-300">
                             Por cobrar
@@ -1014,7 +1023,6 @@ export default function CocinaView() {
                         </div>
                       </div>
 
-                      {/* Método de pago preseleccionado y bloqueado + botón rojo para cambiarlo */}
                       <div className="space-y-2">
                         <div className="flex items-center justify-between gap-2">
                           <span className="text-xs font-bold uppercase tracking-wider text-zinc-400">
