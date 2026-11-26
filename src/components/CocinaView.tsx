@@ -1,8 +1,13 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  descargarPdfRegistroDia,
+  descargarPdfTodosLosRegistros,
+  RegistroDiaVenta,
+} from "../utils/pdfRegistroVentas";
 
 export type TipoEstacion = "alimento" | "bebida";
 export type FiltroEstacion = "todos" | "alimento" | "bebida";
-export type VistaActiva = FiltroEstacion | "estatus_mesas" | "cuentas";
+export type VistaActiva = FiltroEstacion | "estatus_mesas" | "cuentas" | "registro_ventas";
 export type MetodoPago = "efectivo" | "tarjeta";
 
 export interface ItemComanda {
@@ -114,6 +119,10 @@ export interface ProductoMasVendidoInfo {
 }
 
 export interface ResumenDiaResponse {
+  fecha_operativa: string;
+  fecha_operativa_etiqueta: string;
+  numero_reinicio_dia: number;
+  reinicios_realizados_hoy: number;
   cantidad_cuentas: number;
   subtotal_ventas: number;
   propinas_totales: number;
@@ -124,6 +133,14 @@ export interface ResumenDiaResponse {
   alimento_mas_vendido: ProductoMasVendidoInfo | null;
   bebida_mas_vendido: ProductoMasVendidoInfo | null;
   combo_mas_vendido: ProductoMasVendidoInfo | null;
+}
+
+export interface RegistroVentasResponse {
+  mes_nombre: string;
+  anio: number;
+  dias_restantes_reseteo: number;
+  alerta_reinicio_proximo: boolean;
+  registros: RegistroDiaVenta[];
 }
 
 const API_BASE =
@@ -187,13 +204,16 @@ export default function CocinaView() {
       guardado === "bebida" ||
       guardado === "todos" ||
       guardado === "estatus_mesas" ||
-      guardado === "cuentas"
+      guardado === "cuentas" ||
+      guardado === "registro_ventas"
       ? guardado
       : "todos";
   });
 
   const filtroEstacion: FiltroEstacion =
-    vista === "estatus_mesas" || vista === "cuentas" ? "todos" : vista;
+    vista === "estatus_mesas" || vista === "cuentas" || vista === "registro_ventas"
+      ? "todos"
+      : vista;
 
   const [comandas, setComandas] = useState<Comanda[]>([]);
   const [estatusMesas, setEstatusMesas] = useState<EstatusMesasResponse>({
@@ -205,6 +225,15 @@ export default function CocinaView() {
   const [cuentasPorCobrar, setCuentasPorCobrar] = useState<CuentaPorCobrar[]>([]);
   const [cobroPorCuentaId, setCobroPorCuentaId] = useState<Record<string, EstadoCobroLocal>>({});
   const [pagandoId, setPagandoId] = useState<string | null>(null);
+
+  const [registroVentas, setRegistroVentas] = useState<RegistroVentasResponse>({
+    mes_nombre: "Noviembre",
+    anio: 2026,
+    dias_restantes_reseteo: 30,
+    alerta_reinicio_proximo: false,
+    registros: [],
+  });
+  const [mostrarAlertaReinicio, setMostrarAlertaReinicio] = useState(false);
 
   const [confirmarTerminarDia, setConfirmarTerminarDia] = useState(false);
   const [cargandoResumenDia, setCargandoResumenDia] = useState(false);
@@ -230,9 +259,25 @@ export default function CocinaView() {
     return () => window.clearInterval(timer);
   }, []);
 
+  const cargarRegistroVentas = useCallback(async (dispararAlertaSiAplica = false) => {
+    try {
+      const res = await fetch(`${API_BASE}/api/v1/cocina/registro-ventas?t=${Date.now()}`, {
+        cache: "no-store",
+      });
+      if (!res.ok) return;
+      const data: RegistroVentasResponse = await res.json();
+      setRegistroVentas(data);
+      if (dispararAlertaSiAplica && data.alerta_reinicio_proximo) {
+        setMostrarAlertaReinicio(true);
+      }
+    } catch {
+      // Silencioso en polling
+    }
+  }, []);
+
   const cargarTodo = useCallback(async () => {
     try {
-      const [resComandas, resMesas, resCuentas] = await Promise.all([
+      const [resComandas, resMesas, resCuentas, resRegistro] = await Promise.all([
         fetch(`${API_BASE}/api/v1/cocina/comandas?incluir_completadas=true&t=${Date.now()}`, {
           cache: "no-store",
         }),
@@ -240,6 +285,9 @@ export default function CocinaView() {
           cache: "no-store",
         }),
         fetch(`${API_BASE}/api/v1/cocina/cuentas-por-cobrar?t=${Date.now()}`, {
+          cache: "no-store",
+        }),
+        fetch(`${API_BASE}/api/v1/cocina/registro-ventas?t=${Date.now()}`, {
           cache: "no-store",
         }),
       ]);
@@ -277,6 +325,11 @@ export default function CocinaView() {
         });
       }
 
+      if (resRegistro.ok) {
+        const dataReg: RegistroVentasResponse = await resRegistro.json();
+        setRegistroVentas(dataReg);
+      }
+
       setError(null);
     } catch {
       setError("No se pudieron sincronizar los datos con el servidor.");
@@ -290,6 +343,11 @@ export default function CocinaView() {
     const polling = window.setInterval(cargarTodo, 3000);
     return () => window.clearInterval(polling);
   }, [cargarTodo]);
+
+  const handleAbrirRegistroVentas = () => {
+    setVista("registro_ventas");
+    cargarRegistroVentas(true);
+  };
 
   const itemCoincideEstacion = useCallback(
     (item: ItemComanda) => filtroEstacion === "todos" || item.tipo === filtroEstacion,
@@ -610,8 +668,8 @@ export default function CocinaView() {
 
   return (
     <div className="min-h-screen bg-zinc-950 text-zinc-100 p-4 md:p-6 select-none">
-      <header className="flex flex-wrap items-center justify-between gap-4 pb-5 border-b border-zinc-800">
-        <div>
+      <header className="flex flex-wrap items-start justify-between gap-4 pb-5 border-b border-zinc-800">
+        <div className="space-y-1.5">
           <h1 className="text-2xl md:text-3xl font-bold tracking-tight">
             Visiak KDS · Cocina &amp; Barra
           </h1>
@@ -620,8 +678,23 @@ export default function CocinaView() {
               ? "Estatus mesas · 0–3m Verde · 3–8m Amarillo · 8m+ Rojo"
               : vista === "cuentas"
               ? "Cuentas por cobrar · Propinas y cierre de pago"
+              : vista === "registro_ventas"
+              ? "Registro ventas · Cortes diarios (3:00 AM – 3:00 AM) y reportes PDF"
               : "0–10m Verde · 10–25m Amarillo · 25m+ Rojo"}
           </p>
+          <div className="pt-0.5">
+            <button
+              type="button"
+              onClick={handleAbrirRegistroVentas}
+              className={`px-3.5 py-1.5 rounded-lg text-xs font-extrabold border transition cursor-pointer ${
+                vista === "registro_ventas"
+                  ? "bg-amber-400 text-zinc-950 border-amber-300 shadow"
+                  : "bg-zinc-900/90 text-amber-300 hover:bg-zinc-800 border-amber-400/30"
+              }`}
+            >
+              Registro ventas
+            </button>
+          </div>
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
@@ -667,7 +740,7 @@ export default function CocinaView() {
             </button>
           )}
 
-          {vista !== "estatus_mesas" && vista !== "cuentas" && (
+          {vista !== "estatus_mesas" && vista !== "cuentas" && vista !== "registro_ventas" && (
             <button
               type="button"
               onClick={() => setMostrarAnteriores((v) => !v)}
@@ -701,6 +774,38 @@ export default function CocinaView() {
         </div>
       )}
 
+      {/* VENTANA EMERGENTE: AVISO DE 3 DÍAS PARA REINICIO MENSUAL */}
+      {mostrarAlertaReinicio && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
+          <div className="w-full max-w-md rounded-2xl bg-zinc-900 border border-amber-400/60 p-6 text-center shadow-2xl space-y-4">
+            <h2 className="text-lg font-extrabold text-amber-300">
+              Aviso de reinicio de registro de ventas
+            </h2>
+            <p className="text-sm text-zinc-200">
+              Faltan{" "}
+              <strong className="text-white">
+                {registroVentas.dias_restantes_reseteo}{" "}
+                {registroVentas.dias_restantes_reseteo === 1 ? "día" : "días"}
+              </strong>{" "}
+              para que se resetee el registro de ventas; si quieres descargarlo te quedan{" "}
+              <strong className="text-white">
+                {registroVentas.dias_restantes_reseteo}{" "}
+                {registroVentas.dias_restantes_reseteo === 1 ? "día" : "días"}
+              </strong>{" "}
+              para hacerlo.
+            </p>
+            <button
+              type="button"
+              onClick={() => setMostrarAlertaReinicio(false)}
+              className="w-full py-2.5 rounded-xl bg-amber-400 hover:bg-amber-300 text-zinc-950 font-extrabold text-sm transition cursor-pointer"
+            >
+              Entendido
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL CONFIRMACIÓN: ¿SEGURO QUE QUIERES TERMINAR EL DÍA? */}
       {confirmarTerminarDia && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
           <div className="w-full max-w-sm rounded-2xl bg-zinc-900 border border-rose-500/50 p-6 text-center shadow-2xl space-y-4">
@@ -730,11 +835,19 @@ export default function CocinaView() {
         </div>
       )}
 
+      {/* MODAL REPORTE: RESUMEN DEL DÍA */}
       {(cargandoResumenDia || resumenDia) && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-sm p-4">
           <div className="w-full max-w-lg rounded-2xl bg-zinc-900 border border-zinc-700 p-6 shadow-2xl space-y-4 max-h-[90vh] overflow-y-auto">
-            <div className="flex items-center justify-between pb-3 border-b border-zinc-800">
-              <h2 className="text-xl font-extrabold text-amber-400">Resumen del día</h2>
+            <div className="flex items-start justify-between pb-3 border-b border-zinc-800 gap-3">
+              <div>
+                <p className="text-xs font-extrabold uppercase tracking-wider text-amber-300">
+                  {resumenDia
+                    ? `${resumenDia.fecha_operativa_etiqueta} · Reinicio de día #${resumenDia.numero_reinicio_dia}`
+                    : "Resumen del día"}
+                </p>
+                <h2 className="text-xl font-extrabold text-amber-400 mt-0.5">Resumen del día</h2>
+              </div>
               <button
                 type="button"
                 onClick={() => {
@@ -879,7 +992,125 @@ export default function CocinaView() {
         </div>
       )}
 
-      {vista === "cuentas" ? (
+      {/* VISTA: REGISTRO DE VENTAS */}
+      {vista === "registro_ventas" ? (
+        <main className="mt-6 space-y-6">
+          <div className="flex flex-wrap items-center justify-between gap-4 pb-3 border-b border-zinc-800">
+            <div>
+              <span className="text-xs font-extrabold uppercase tracking-widest text-amber-300 block">
+                Mes en curso
+              </span>
+              <h2 className="text-2xl font-extrabold text-white">
+                {registroVentas.mes_nombre} {registroVentas.anio}
+              </h2>
+            </div>
+
+            <button
+              type="button"
+              onClick={() =>
+                descargarPdfTodosLosRegistros(
+                  registroVentas.registros,
+                  registroVentas.mes_nombre,
+                  registroVentas.anio
+                )
+              }
+              className="px-4 py-2.5 rounded-xl bg-amber-400 hover:bg-amber-300 text-zinc-950 font-extrabold text-xs tracking-wide transition cursor-pointer shadow"
+            >
+              Descargar todos los registros del día
+            </button>
+          </div>
+
+          {registroVentas.registros.length === 0 ? (
+            <div className="rounded-2xl border border-dashed border-zinc-800 p-12 text-center text-zinc-400">
+              Aún no hay registros de días guardados en {registroVentas.mes_nombre}.
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+              {registroVentas.registros.map((reg) => (
+                <article
+                  key={reg.fecha_operativa}
+                  className="rounded-2xl bg-zinc-900 border-2 border-zinc-800 p-6 flex flex-col justify-between space-y-5 shadow-xl"
+                >
+                  <div className="space-y-4">
+                    <div className="flex flex-wrap items-center justify-between gap-2 pb-3 border-b border-zinc-800">
+                      <div>
+                        <h3 className="text-xl font-extrabold text-white">
+                          {reg.fecha_operativa_etiqueta}
+                        </h3>
+                        <p className="text-xs text-zinc-400 mt-0.5">
+                          Reinicios de día realizados: {reg.reinicios_realizados} · Cuentas totales
+                          del día: {reg.cuentas_totales}
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => descargarPdfRegistroDia(reg)}
+                        className="px-3.5 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-zinc-950 font-extrabold text-xs transition cursor-pointer"
+                      >
+                        Descargar registro de día
+                      </button>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 text-xs">
+                      <div className="p-3 rounded-xl bg-zinc-950 border border-zinc-800">
+                        <span className="text-zinc-400 block">Producto más vendido</span>
+                        <strong className="text-sm text-white mt-0.5 block">
+                          {reg.producto_mas_vendido
+                            ? `${reg.producto_mas_vendido.nombre} (${reg.producto_mas_vendido.cantidad})`
+                            : "Sin ventas"}
+                        </strong>
+                      </div>
+                      <div className="p-3 rounded-xl bg-zinc-950 border border-zinc-800">
+                        <span className="text-zinc-400 block">Alimento más vendido</span>
+                        <strong className="text-sm text-white mt-0.5 block">
+                          {reg.alimento_mas_vendido
+                            ? `${reg.alimento_mas_vendido.nombre} (${reg.alimento_mas_vendido.cantidad})`
+                            : "Sin alimentos"}
+                        </strong>
+                      </div>
+                      <div className="p-3 rounded-xl bg-zinc-950 border border-zinc-800">
+                        <span className="text-zinc-400 block">Bebida más vendida</span>
+                        <strong className="text-sm text-white mt-0.5 block">
+                          {reg.bebida_mas_vendido
+                            ? `${reg.bebida_mas_vendido.nombre} (${reg.bebida_mas_vendido.cantidad})`
+                            : "Sin bebidas"}
+                        </strong>
+                      </div>
+                      <div className="p-3 rounded-xl bg-zinc-950 border border-zinc-800">
+                        <span className="text-zinc-400 block">Combo más vendido</span>
+                        <strong className="text-sm text-amber-300 mt-0.5 block">
+                          {reg.combo_mas_vendido
+                            ? `${reg.combo_mas_vendido.nombre} (${reg.combo_mas_vendido.cantidad})`
+                            : "Sin combos"}
+                        </strong>
+                      </div>
+                    </div>
+
+                    <div className="p-4 rounded-xl bg-zinc-950 border border-zinc-800 space-y-1.5 text-sm">
+                      <div className="flex justify-between text-zinc-300">
+                        <span>Subtotal vendido (productos):</span>
+                        <span className="font-bold text-white">
+                          {formatoMoneda(reg.subtotal_ventas)}
+                        </span>
+                      </div>
+                      <div className="flex justify-between text-zinc-300">
+                        <span>Propinas recaudadas:</span>
+                        <span className="font-bold text-emerald-400">
+                          {formatoMoneda(reg.propinas_totales)}
+                        </span>
+                      </div>
+                      <div className="flex justify-between text-zinc-300">
+                        <span>Cuentas totales del día:</span>
+                        <span className="font-bold text-amber-300">{reg.cuentas_totales}</span>
+                      </div>
+                    </div>
+                  </div>
+                </article>
+              ))}
+            </div>
+          )}
+        </main>
+      ) : vista === "cuentas" ? (
         <main className="mt-6 space-y-4">
           <div className="flex items-center justify-between">
             <h2 className="text-lg font-bold text-amber-400">
