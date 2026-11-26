@@ -45,6 +45,7 @@ export function BotonOrdenarHeader({ productosDisponibles = [] }: BotonOrdenarHe
   const [mostrarResumen, setMostrarResumen] = useState(false);
   const [productoSeleccionado, setProductoSeleccionado] = useState<Producto | null>(null);
 
+  const [mostrarRevisionRonda, setMostrarRevisionRonda] = useState(false);
   const [mostrarConfirmacionEnvio, setMostrarConfirmacionEnvio] = useState(false);
   const [mostrarCuentaFinalizada, setMostrarCuentaFinalizada] = useState(false);
   const [mostrarAvisoPendientesPorConfirmar, setMostrarAvisoPendientesPorConfirmar] = useState(false);
@@ -156,6 +157,7 @@ export function BotonOrdenarHeader({ productosDisponibles = [] }: BotonOrdenarHe
   const totalGeneralCuenta = totalRondasConfirmadas + subtotalCarritoActual;
   const totalItemsEnCuenta =
     carrito.length + rondasConfirmadas.reduce((acc, ronda) => acc + ronda.items.length, 0);
+  const siguienteRondaEstimada = rondasConfirmadas.length + 1;
 
   const validarMesaActiva = (): boolean => {
     if (!mesa) {
@@ -163,6 +165,12 @@ export function BotonOrdenarHeader({ productosDisponibles = [] }: BotonOrdenarHe
       return false;
     }
     return true;
+  };
+
+  const solicitarRevisionPedido = () => {
+    if (!validarMesaActiva()) return;
+    if (carrito.length === 0 || enviandoCocina) return;
+    setMostrarRevisionRonda(true);
   };
 
   const confirmarPedido = async () => {
@@ -248,6 +256,7 @@ export function BotonOrdenarHeader({ productosDisponibles = [] }: BotonOrdenarHe
 
       setCarrito([]);
       localStorage.removeItem('carrito_pedidos');
+      setMostrarRevisionRonda(false);
       setMostrarConfirmacionEnvio(true);
     } catch (err) {
       console.error(err);
@@ -376,7 +385,7 @@ export function BotonOrdenarHeader({ productosDisponibles = [] }: BotonOrdenarHe
                 {carrito.length > 0 && (
                   <button
                     type="button"
-                    onClick={confirmarPedido}
+                    onClick={solicitarRevisionPedido}
                     disabled={enviandoCocina}
                     className="w-full bg-yellow-500 hover:bg-yellow-400 disabled:opacity-60 text-neutral-950 font-bold py-2.5 rounded-xl text-xs transition-colors shadow-lg flex justify-between px-4 items-center"
                   >
@@ -407,6 +416,70 @@ export function BotonOrdenarHeader({ productosDisponibles = [] }: BotonOrdenarHe
                 </button>
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {mostrarRevisionRonda && (
+        <div className="fixed inset-0 bg-black/90 backdrop-blur-sm z-[75] flex justify-center items-center p-4">
+          <div className="bg-neutral-900 border border-yellow-500/40 w-full max-w-md rounded-2xl p-5 relative shadow-2xl space-y-4">
+            <div className="pb-2 border-b border-neutral-800">
+              <p className="text-[11px] font-bold uppercase tracking-wider text-yellow-400">
+                Mesa {mesa} · Ronda #{siguienteRondaEstimada}
+              </p>
+              <h3 className="text-base font-bold text-white mt-0.5">
+                Confirmar envío a cocina
+              </h3>
+              <p className="text-xs text-neutral-400 mt-0.5">
+                Revisa que los productos correspondan a tu mesa antes de mandar la ronda.
+              </p>
+            </div>
+
+            <div className="space-y-2 max-h-56 overflow-y-auto pr-1">
+              {carrito.map((item, idx) => (
+                <div
+                  key={`${item.id}-${idx}`}
+                  className="bg-neutral-800/80 border border-neutral-700/60 p-2.5 rounded-xl text-xs"
+                >
+                  <div className="flex justify-between items-center text-white font-semibold">
+                    <span>
+                      <strong className="text-yellow-400 mr-1">{item.cantidad}x</strong>
+                      {item.nombre}
+                    </span>
+                    <span className="text-neutral-300">${item.subtotal.toFixed(2)}</span>
+                  </div>
+                  {item.comentarios && item.comentarios.trim() !== '' && (
+                    <p className="text-[11px] text-amber-300 mt-1">
+                      Nota: {item.comentarios.trim()}
+                    </p>
+                  )}
+                </div>
+              ))}
+            </div>
+
+            <div className="flex justify-between items-center pt-2 border-t border-neutral-800 text-sm font-bold">
+              <span className="text-neutral-300">Subtotal ronda:</span>
+              <span className="text-green-400">${subtotalCarritoActual.toFixed(2)}</span>
+            </div>
+
+            <div className="flex gap-2 pt-1">
+              <button
+                type="button"
+                disabled={enviandoCocina}
+                onClick={() => setMostrarRevisionRonda(false)}
+                className="w-1/2 bg-neutral-800 hover:bg-neutral-700 text-white font-bold py-2.5 rounded-xl text-xs transition-colors"
+              >
+                Volver a editar
+              </button>
+              <button
+                type="button"
+                disabled={enviandoCocina}
+                onClick={confirmarPedido}
+                className="w-1/2 bg-yellow-500 hover:bg-yellow-400 disabled:opacity-60 text-neutral-950 font-bold py-2.5 rounded-xl text-xs transition-colors shadow-lg"
+              >
+                {enviandoCocina ? 'Enviando...' : 'Confirmar envío'}
+              </button>
+            </div>
           </div>
         </div>
       )}
