@@ -25,6 +25,7 @@ interface RondaPedido {
   numeroRonda: number;
   items: ItemCarrito[];
   subtotalRonda: number;
+  confirmadaEn?: string;
 }
 
 interface BotonOrdenarHeaderProps {
@@ -33,6 +34,16 @@ interface BotonOrdenarHeaderProps {
 
 const obtenerPrecio = (prod: Producto): number => {
   return Number(prod.precio_final ?? prod.precio_original ?? prod.precio ?? 0);
+};
+
+const formatearHoraRonda = (fechaIso?: string): string => {
+  if (!fechaIso) return '';
+  const fecha = new Date(fechaIso);
+  if (Number.isNaN(fecha.getTime())) return '';
+  return fecha.toLocaleTimeString('es-MX', {
+    hour: '2-digit',
+    minute: '2-digit',
+  });
 };
 
 const API_BASE =
@@ -250,6 +261,7 @@ export function BotonOrdenarHeader({ productosDisponibles = [] }: BotonOrdenarHe
             numeroRonda,
             items: carrito,
             subtotalRonda: subtotalCarritoActual,
+            confirmadaEn: new Date().toISOString(),
           },
         ]);
       }
@@ -312,6 +324,11 @@ export function BotonOrdenarHeader({ productosDisponibles = [] }: BotonOrdenarHe
       setFinalizandoCuenta(false);
     }
   };
+
+  const horaActualRevision = new Date().toLocaleTimeString('es-MX', {
+    hour: '2-digit',
+    minute: '2-digit',
+  });
 
   return (
     <>
@@ -425,7 +442,7 @@ export function BotonOrdenarHeader({ productosDisponibles = [] }: BotonOrdenarHe
           <div className="bg-neutral-900 border border-yellow-500/40 w-full max-w-md rounded-2xl p-5 relative shadow-2xl space-y-4">
             <div className="pb-2 border-b border-neutral-800">
               <p className="text-[11px] font-bold uppercase tracking-wider text-yellow-400">
-                Mesa {mesa} · Ronda #{siguienteRondaEstimada}
+                Mesa {mesa} · Ronda #{siguienteRondaEstimada} · {horaActualRevision}
               </p>
               <h3 className="text-base font-bold text-white mt-0.5">
                 Confirmar envío a cocina
@@ -559,30 +576,34 @@ export function BotonOrdenarHeader({ productosDisponibles = [] }: BotonOrdenarHe
             </div>
 
             <div className="space-y-3 overflow-y-auto pr-1 flex-1 mb-3">
-              {rondasConfirmadas.map((ronda) => (
-                <div
-                  key={ronda.numeroRonda}
-                  className="bg-neutral-800/40 p-3 rounded-xl border border-neutral-700/40 space-y-2"
-                >
-                  <div className="flex justify-between items-center">
-                    <span className="text-xs font-bold text-green-400">
-                      ✓ Ronda #{ronda.numeroRonda} confirmada
-                    </span>
-                    <span className="text-xs font-bold text-neutral-300">
-                      ${ronda.subtotalRonda.toFixed(2)}
-                    </span>
-                  </div>
-                  {ronda.items.map((item, idx) => (
-                    <div key={idx} className="text-xs text-neutral-200 flex justify-between">
-                      <span>
-                        {item.cantidad}x {item.nombre}
-                        {item.comentarios ? ` (${item.comentarios})` : ''}
+              {rondasConfirmadas.map((ronda) => {
+                const horaRonda = formatearHoraRonda(ronda.confirmadaEn);
+                return (
+                  <div
+                    key={ronda.numeroRonda}
+                    className="bg-neutral-800/40 p-3 rounded-xl border border-neutral-700/40 space-y-2"
+                  >
+                    <div className="flex justify-between items-center">
+                      <span className="text-xs font-bold text-green-400">
+                        ✓ Ronda #{ronda.numeroRonda} confirmada
+                        {horaRonda ? ` · ${horaRonda}` : ''}
                       </span>
-                      <span className="text-neutral-400">${item.subtotal.toFixed(2)}</span>
+                      <span className="text-xs font-bold text-neutral-300">
+                        ${ronda.subtotalRonda.toFixed(2)}
+                      </span>
                     </div>
-                  ))}
-                </div>
-              ))}
+                    {ronda.items.map((item, idx) => (
+                      <div key={idx} className="text-xs text-neutral-200 flex justify-between">
+                        <span>
+                          {item.cantidad}x {item.nombre}
+                          {item.comentarios ? ` (${item.comentarios})` : ''}
+                        </span>
+                        <span className="text-neutral-400">${item.subtotal.toFixed(2)}</span>
+                      </div>
+                    ))}
+                  </div>
+                );
+              })}
 
               {carrito.map((item, index) => (
                 <div
