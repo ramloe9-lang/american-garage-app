@@ -3,7 +3,7 @@ import {
   descargarPdfRegistroDia,
   descargarPdfTodosLosRegistros,
   RegistroDiaVenta,
-} from "../utils/pdfRegistroVentas";
+} from "../lib/pdfRegistroVentas";
 
 export type TipoEstacion = "alimento" | "bebida";
 export type FiltroEstacion = "todos" | "alimento" | "bebida";
@@ -774,7 +774,6 @@ export default function CocinaView() {
         </div>
       )}
 
-      {/* VENTANA EMERGENTE: AVISO DE 3 DÍAS PARA REINICIO MENSUAL */}
       {mostrarAlertaReinicio && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
           <div className="w-full max-w-md rounded-2xl bg-zinc-900 border border-amber-400/60 p-6 text-center shadow-2xl space-y-4">
@@ -805,7 +804,6 @@ export default function CocinaView() {
         </div>
       )}
 
-      {/* MODAL CONFIRMACIÓN: ¿SEGURO QUE QUIERES TERMINAR EL DÍA? */}
       {confirmarTerminarDia && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
           <div className="w-full max-w-sm rounded-2xl bg-zinc-900 border border-rose-500/50 p-6 text-center shadow-2xl space-y-4">
@@ -835,7 +833,6 @@ export default function CocinaView() {
         </div>
       )}
 
-      {/* MODAL REPORTE: RESUMEN DEL DÍA */}
       {(cargandoResumenDia || resumenDia) && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-sm p-4">
           <div className="w-full max-w-lg rounded-2xl bg-zinc-900 border border-zinc-700 p-6 shadow-2xl space-y-4 max-h-[90vh] overflow-y-auto">
@@ -992,7 +989,6 @@ export default function CocinaView() {
         </div>
       )}
 
-      {/* VISTA: REGISTRO DE VENTAS */}
       {vista === "registro_ventas" ? (
         <main className="mt-6 space-y-6">
           <div className="flex flex-wrap items-center justify-between gap-4 pb-3 border-b border-zinc-800">
