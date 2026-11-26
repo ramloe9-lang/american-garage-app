@@ -47,6 +47,7 @@ export function BotonOrdenarHeader({ productosDisponibles = [] }: BotonOrdenarHe
 
   const [mostrarConfirmacionEnvio, setMostrarConfirmacionEnvio] = useState(false);
   const [mostrarCuentaFinalizada, setMostrarCuentaFinalizada] = useState(false);
+  const [mostrarAvisoPendientesPorConfirmar, setMostrarAvisoPendientesPorConfirmar] = useState(false);
 
   const [cantidad, setCantidad] = useState<number>(1);
   const [comentarios, setComentarios] = useState<string>('');
@@ -259,48 +260,16 @@ export function BotonOrdenarHeader({ productosDisponibles = [] }: BotonOrdenarHe
   const finalizarCuenta = async () => {
     if (!validarMesaActiva() || finalizandoCuenta) return;
 
-    const rondasParaResumen: RondaPedido[] =
-      carrito.length > 0
-        ? [
-            ...rondasConfirmadas,
-            {
-              numeroRonda: rondasConfirmadas.length + 1,
-              items: carrito,
-              subtotalRonda: subtotalCarritoActual,
-            },
-          ]
-        : rondasConfirmadas;
+    if (carrito.length > 0) {
+      setMostrarAvisoPendientesPorConfirmar(true);
+      return;
+    }
 
-    if (rondasParaResumen.length === 0) return;
+    if (rondasConfirmadas.length === 0) return;
 
     setFinalizandoCuenta(true);
 
     try {
-      if (carrito.length > 0) {
-        const resRondaExtra = await fetch(
-          `${API_BASE}/api/v1/cocina/cuentas/${encodeURIComponent(String(mesa))}/rondas`,
-          {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              items: carrito.map((item) => ({
-                producto_id: String(item.id),
-                nombre: item.nombre,
-                categoria: item.categoria,
-                precio: item.precio,
-                cantidad: item.cantidad,
-                comentarios: item.comentarios,
-                subtotal: item.subtotal,
-              })),
-              subtotal_ronda: subtotalCarritoActual,
-            }),
-          }
-        );
-        if (!resRondaExtra.ok) {
-          throw new Error(`Error al registrar ronda pendiente (${resRondaExtra.status})`);
-        }
-      }
-
       const metodoApi = metodoPago === 'Efectivo' ? 'efectivo' : 'tarjeta';
       const resCierre = await fetch(
         `${API_BASE}/api/v1/cocina/cuentas/${encodeURIComponent(
@@ -622,6 +591,31 @@ export function BotonOrdenarHeader({ productosDisponibles = [] }: BotonOrdenarHe
                 {finalizandoCuenta ? 'Finalizando...' : 'Finalizar cuenta 🧾'}
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {mostrarAvisoPendientesPorConfirmar && (
+        <div className="fixed inset-0 bg-black/85 backdrop-blur-sm z-[82] flex justify-center items-center p-4">
+          <div className="bg-neutral-900 border border-amber-500/50 w-full max-w-sm rounded-2xl p-6 text-center shadow-2xl">
+            <div className="w-12 h-12 rounded-full bg-amber-500/20 text-amber-400 flex items-center justify-center text-2xl mx-auto mb-3">
+              !
+            </div>
+            <h3 className="text-base font-bold text-white mb-1">Pedidos sin confirmar</h3>
+            <p className="text-sm text-neutral-200 mb-5">
+              No puedes finalizar la cuenta aún tienes pedidos por confirmar.
+            </p>
+            <button
+              type="button"
+              onClick={() => {
+                setMostrarAvisoPendientesPorConfirmar(false);
+                setMostrarResumen(false);
+                setMostrarCatalogo(true);
+              }}
+              className="w-full bg-amber-400 hover:bg-amber-300 text-neutral-950 font-bold py-2.5 rounded-xl text-xs transition-colors"
+            >
+              Aceptar
+            </button>
           </div>
         </div>
       )}
