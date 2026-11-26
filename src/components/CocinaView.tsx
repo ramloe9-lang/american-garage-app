@@ -157,6 +157,16 @@ function formatoMoneda(valor: number): string {
   });
 }
 
+function formatoHoraCorta(fechaIso?: string | null): string {
+  if (!fechaIso) return "";
+  const fecha = new Date(fechaIso);
+  if (Number.isNaN(fecha.getTime())) return "";
+  return fecha.toLocaleTimeString("es-MX", {
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
 function obtenerEstadoTiempo(
   fechaIso: string,
   ahoraMs: number,
@@ -1153,33 +1163,39 @@ export default function CocinaView() {
                       </div>
 
                       <div className="space-y-2.5 max-h-60 overflow-y-auto pr-1">
-                        {cuenta.rondas.map((ronda) => (
-                          <div
-                            key={ronda.numeroRonda}
-                            className="p-3 rounded-xl bg-zinc-950/90 border border-zinc-800 space-y-1.5"
-                          >
-                            <div className="flex items-center justify-between text-xs font-bold text-amber-300">
-                              <span>Ronda #{ronda.numeroRonda}</span>
-                              <span>{formatoMoneda(ronda.subtotalRonda)}</span>
+                        {cuenta.rondas.map((ronda) => {
+                          const horaRonda = formatoHoraCorta(ronda.confirmadaEn);
+                          return (
+                            <div
+                              key={ronda.numeroRonda}
+                              className="p-3 rounded-xl bg-zinc-950/90 border border-zinc-800 space-y-1.5"
+                            >
+                              <div className="flex items-center justify-between text-xs font-bold text-amber-300">
+                                <span>
+                                  Ronda #{ronda.numeroRonda}
+                                  {horaRonda ? ` · ${horaRonda}` : ""}
+                                </span>
+                                <span>{formatoMoneda(ronda.subtotalRonda)}</span>
+                              </div>
+                              <ul className="space-y-1">
+                                {ronda.items.map((it, idx) => (
+                                  <li
+                                    key={`${it.producto_id}-${idx}`}
+                                    className="flex items-center justify-between text-xs text-zinc-200"
+                                  >
+                                    <span>
+                                      <strong className="text-zinc-400 mr-1">{it.cantidad}x</strong>
+                                      {it.nombre}
+                                    </span>
+                                    <span className="text-zinc-300">
+                                      {formatoMoneda(it.subtotal)}
+                                    </span>
+                                  </li>
+                                ))}
+                              </ul>
                             </div>
-                            <ul className="space-y-1">
-                              {ronda.items.map((it, idx) => (
-                                <li
-                                  key={`${it.producto_id}-${idx}`}
-                                  className="flex items-center justify-between text-xs text-zinc-200"
-                                >
-                                  <span>
-                                    <strong className="text-zinc-400 mr-1">{it.cantidad}x</strong>
-                                    {it.nombre}
-                                  </span>
-                                  <span className="text-zinc-300">
-                                    {formatoMoneda(it.subtotal)}
-                                  </span>
-                                </li>
-                              ))}
-                            </ul>
-                          </div>
-                        ))}
+                          );
+                        })}
                       </div>
 
                       <div className="p-3.5 rounded-xl bg-zinc-950 border border-zinc-800 space-y-3">
@@ -1343,24 +1359,28 @@ export default function CocinaView() {
                           </div>
 
                           <div className="space-y-2.5">
-                            {cuenta.rondas.map((reg) => (
-                              <div
-                                key={reg.id}
-                                className="p-3 rounded-xl bg-zinc-900 border border-zinc-800 space-y-1.5"
-                              >
-                                <div className="flex items-center justify-between">
-                                  <span className="font-bold text-sm text-white">
-                                    Ronda #{reg.numero_ronda}
-                                  </span>
-                                  <span className="text-[11px] font-semibold px-2 py-0.5 rounded bg-emerald-950/80 text-emerald-300 border border-emerald-500/30">
-                                    Entregado
-                                  </span>
+                            {cuenta.rondas.map((reg) => {
+                              const horaEntrega = formatoHoraCorta(reg.entregado_en);
+                              return (
+                                <div
+                                  key={reg.id}
+                                  className="p-3 rounded-xl bg-zinc-900 border border-zinc-800 space-y-1.5"
+                                >
+                                  <div className="flex items-center justify-between">
+                                    <span className="font-bold text-sm text-white">
+                                      Ronda #{reg.numero_ronda}
+                                      {horaEntrega ? ` · ${horaEntrega}` : ""}
+                                    </span>
+                                    <span className="text-[11px] font-semibold px-2 py-0.5 rounded bg-emerald-950/80 text-emerald-300 border border-emerald-500/30">
+                                      Entregado
+                                    </span>
+                                  </div>
+                                  <p className="text-xs text-zinc-300">
+                                    {reg.items.map((it) => `${it.cantidad}x ${it.nombre}`).join(", ")}
+                                  </p>
                                 </div>
-                                <p className="text-xs text-zinc-300">
-                                  {reg.items.map((it) => `${it.cantidad}x ${it.nombre}`).join(", ")}
-                                </p>
-                              </div>
-                            ))}
+                              );
+                            })}
                           </div>
                         </div>
                       ))}
@@ -1407,6 +1427,7 @@ export default function CocinaView() {
                     verdeMaxMin: 3,
                     amarilloMaxMin: 8,
                   });
+                  const horaLlamado = formatoHoraCorta(llamado.creado_en);
                   return (
                     <article
                       key={llamado.id}
@@ -1433,6 +1454,7 @@ export default function CocinaView() {
                               className={`px-3 py-1 rounded-full text-sm font-bold ${tiempo.badgeTexto}`}
                             >
                               {tiempo.label}
+                              {horaLlamado ? ` · ${horaLlamado}` : ""}
                             </span>
                           </div>
                           <p className="mt-3 text-sm text-zinc-200">{llamado.motivo}</p>
@@ -1473,6 +1495,7 @@ export default function CocinaView() {
                     verdeMaxMin: 3,
                     amarilloMaxMin: 8,
                   });
+                  const horaListo = formatoHoraCorta(entrega.listo_en);
                   const etiquetaEstacion =
                     entrega.estacion === "alimento"
                       ? "Alimentos"
@@ -1507,6 +1530,7 @@ export default function CocinaView() {
                               className={`px-3 py-1 rounded-full text-sm font-bold ${tiempo.badgeTexto}`}
                             >
                               {tiempo.label}
+                              {horaListo ? ` · ${horaListo}` : ""}
                             </span>
                           </div>
 
@@ -1579,31 +1603,35 @@ export default function CocinaView() {
                 <p className="text-sm text-zinc-400">No hay órdenes completadas en esta vista.</p>
               ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-                  {ordenesAnterioresCocina.map((c) => (
-                    <div
-                      key={c.id}
-                      className="p-3 rounded-xl bg-zinc-950 border border-zinc-800 flex items-center justify-between gap-3"
-                    >
-                      <div>
-                        <div className="font-bold text-base">
-                          Mesa {c.mesa} · Ronda #{c.numero_ronda}
-                        </div>
-                        <div className="text-xs text-zinc-400 mt-0.5">
-                          {c.items
-                            .filter((it) => it.listo && itemCoincideEstacion(it))
-                            .map((it) => `${it.cantidad}x ${it.nombre}`)
-                            .join(", ")}
-                        </div>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => handleRestaurar(c.id)}
-                        className="px-3 py-2 rounded-lg bg-amber-400/20 hover:bg-amber-400/30 text-amber-300 border border-amber-400/50 text-xs font-semibold shrink-0 cursor-pointer"
+                  {ordenesAnterioresCocina.map((c) => {
+                    const horaComanda = formatoHoraCorta(c.creada_en);
+                    return (
+                      <div
+                        key={c.id}
+                        className="p-3 rounded-xl bg-zinc-950 border border-zinc-800 flex items-center justify-between gap-3"
                       >
-                        Restaurar
-                      </button>
-                    </div>
-                  ))}
+                        <div>
+                          <div className="font-bold text-base">
+                            Mesa {c.mesa} · Ronda #{c.numero_ronda}
+                            {horaComanda ? ` · ${horaComanda}` : ""}
+                          </div>
+                          <div className="text-xs text-zinc-400 mt-0.5">
+                            {c.items
+                              .filter((it) => it.listo && itemCoincideEstacion(it))
+                              .map((it) => `${it.cantidad}x ${it.nombre}`)
+                              .join(", ")}
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => handleRestaurar(c.id)}
+                          className="px-3 py-2 rounded-lg bg-amber-400/20 hover:bg-amber-400/30 text-amber-300 border border-amber-400/50 text-xs font-semibold shrink-0 cursor-pointer"
+                        >
+                          Restaurar
+                        </button>
+                      </div>
+                    );
+                  })}
                 </div>
               )}
             </section>
@@ -1631,6 +1659,7 @@ export default function CocinaView() {
                     verdeMaxMin: 10,
                     amarilloMaxMin: 25,
                   });
+                  const horaComanda = formatoHoraCorta(comanda.creada_en);
                   return (
                     <article
                       key={comanda.id}
@@ -1658,6 +1687,7 @@ export default function CocinaView() {
                               className={`px-3 py-1 rounded-full text-sm font-bold ${tiempo.badgeTexto}`}
                             >
                               {tiempo.label}
+                              {horaComanda ? ` · ${horaComanda}` : ""}
                             </span>
                           </div>
 
