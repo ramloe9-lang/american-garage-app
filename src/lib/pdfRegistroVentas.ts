@@ -70,28 +70,36 @@ function construirPaginasDeUnDia(reg: RegistroDiaVenta): string[][] {
     "(MAS VENDIDOS DEL DIA) Tj",
     "/F1 11 Tf",
     "0 -18 Td",
-    `(Producto mas vendido: ${sanitizarPdfTexto(
-      reg.producto_mas_vendido
-        ? `${reg.producto_mas_vendido.nombre} (${reg.producto_mas_vendido.cantidad})`
-        : "Sin ventas"
+    `(${sanitizarPdfTexto(
+      `Producto mas vendido: ${
+        reg.producto_mas_vendido
+          ? `${reg.producto_mas_vendido.nombre} (${reg.producto_mas_vendido.cantidad})`
+          : "Sin ventas"
+      }`
     )}) Tj`,
     "0 -18 Td",
-    `(Alimento mas vendido: ${sanitizarPdfTexto(
-      reg.alimento_mas_vendido
-        ? `${reg.alimento_mas_vendido.nombre} (${reg.alimento_mas_vendido.cantidad})`
-        : "Sin alimentos"
+    `(${sanitizarPdfTexto(
+      `Alimento mas vendido: ${
+        reg.alimento_mas_vendido
+          ? `${reg.alimento_mas_vendido.nombre} (${reg.alimento_mas_vendido.cantidad})`
+          : "Sin alimentos"
+      }`
     )}) Tj`,
     "0 -18 Td",
-    `(Bebida mas vendida: ${sanitizarPdfTexto(
-      reg.bebida_mas_vendido
-        ? `${reg.bebida_mas_vendido.nombre} (${reg.bebida_mas_vendido.cantidad})`
-        : "Sin bebidas"
+    `(${sanitizarPdfTexto(
+      `Bebida mas vendida: ${
+        reg.bebida_mas_vendido
+          ? `${reg.bebida_mas_vendido.nombre} (${reg.bebida_mas_vendido.cantidad})`
+          : "Sin bebidas"
+      }`
     )}) Tj`,
     "0 -18 Td",
-    `(Combo mas vendido: ${sanitizarPdfTexto(
-      reg.combo_mas_vendido
-        ? `${reg.combo_mas_vendido.nombre} (${reg.combo_mas_vendido.cantidad})`
-        : "Sin combos"
+    `(${sanitizarPdfTexto(
+      `Combo mas vendido: ${
+        reg.combo_mas_vendido
+          ? `${reg.combo_mas_vendido.nombre} (${reg.combo_mas_vendido.cantidad})`
+          : "Sin combos"
+      }`
     )}) Tj`,
     "ET",
   ];
@@ -181,7 +189,6 @@ function ensamblarPdfDesdePaginas(allPageStreams: string[][]): Blob {
   const objects: string[] = [];
   const pageObjNumbers: number[] = [];
 
-  // Objeto 1: Catalog, Objeto 2: Pages, Objeto 3: Font regular, Objeto 4: Font bold
   const catalogId = 1;
   const pagesId = 2;
   const fontRegularId = 3;
@@ -257,7 +264,11 @@ export function descargarPdfRegistroDia(reg: RegistroDiaVenta) {
   dispararDescargaBlob(blob, `registro-ventas-${reg.fecha_operativa}.pdf`);
 }
 
-export function descargarPdfTodosLosRegistros(registros: RegistroDiaVenta[], mesNombre: string, anio: number) {
+export function descargarPdfTodosLosRegistros(
+  registros: RegistroDiaVenta[],
+  mesNombre: string,
+  anio: number
+) {
   const todasLasPaginas: string[][] = [];
   for (const reg of registros) {
     todasLasPaginas.push(...construirPaginasDeUnDia(reg));
